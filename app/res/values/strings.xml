@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">펀치리스트</string>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:colorPrimary">#1E293B</item>
+        <item name="android:colorPrimaryDark">#1E293B</item>
+        <item name="android:colorAccent">#F97316</item>
+    </style>
+</resources>

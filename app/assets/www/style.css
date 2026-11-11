@@ -244,3 +244,24 @@ button.cattag:active { background: #f1f5f9; }
 /* ---------- 점검목록 필터 3개 */
 .chiprow .sel { min-width: 0; padding: 0 4px 0 8px; font-size: 14px; }
 .sel.on { border-color: var(--accent); color: var(--accent-d); background: #fff7ed; }
+
+/* ---------- 검색 강조 / 일괄 선택 */
+mark { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; }
+.item .extra { margin-top: 4px; font-size: 12px; color: var(--ink2); }
+.searchbox input::-webkit-search-cancel-button { display: none; }
+.qclear { width: 30px; height: 30px; border-radius: 15px; background: #e2e8f0; color: var(--ink2); font-size: 13px; flex: none; }
+.topbtn { height: 38px; padding: 0 16px; border-radius: 10px; background: rgba(255,255,255,.14); color: #fff; font-weight: 800; font-size: 15px; flex: none; }
+.topbtn.on { background: var(--accent); }
+.listhead { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 10px; min-height: 24px; }
+.listhead .note { margin: 0; }
+.selhint { margin: -4px 4px 10px; }
+.item { position: relative; }
+.item .chk { position: absolute; left: -6px; top: -6px; z-index: 2; width: 28px; height: 28px; border-radius: 14px; border: 2px solid var(--ink3);
+  background: #fff; color: transparent; font-weight: 900; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+.item.selected { box-shadow: 0 0 0 2.5px var(--accent); background: #fff7ed; }
+.item.selected .chk { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bulkbar { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 25; background: var(--head); color: #fff;
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.bulkbar span { flex: 1; font-weight: 800; }
+.bulkbar .btn { background: var(--accent); color: #fff; }
+.bulkbar .btn[disabled] { background: #475569; opacity: 1; color: #94a3b8; }

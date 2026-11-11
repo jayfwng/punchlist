@@ -116,6 +116,7 @@ function back() {
     });
     return true;
   }
+  if (cur && cur.name === 'all' && ALL_ST && ALL_ST.sel) { ALL_ST.sel = null; render(); return true; }
   if (stack.length > 1) {
     if (cur.name === 'item') clearDraft();
     stack.pop(); ctx = {}; render(); return true;
@@ -124,7 +125,7 @@ function back() {
   return false;
 }
 const ROOT = { home: 'dash', all: 'all', settings: 'settings' };
-function setTab(t) { stack = [{ name: ROOT[t], params: {} }]; ctx = {}; render(); window.scrollTo(0, 0); }
+function setTab(t) { if (ALL_ST) ALL_ST.sel = null; stack = [{ name: ROOT[t], params: {} }]; ctx = {}; render(); window.scrollTo(0, 0); }
 function tabOf(name) { return name === 'all' ? 'all' : name === 'settings' ? 'settings' : 'home'; }
 const TAB_VIEWS = ['dash', 'projects', 'list', 'all', 'settings'];
 window.onBack = back;
@@ -429,12 +430,29 @@ function numberIn(p, cat, item) {
 }
 
 // ======================================================================= 점검목록 (현재 현장 전체)
-function itemCard(p, i, showCat) {
-  const ph = orderedPhotos(i), c = CAT[i.cat];
-  return `<div class="card item" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
+/** 검색어 강조 (HTML 이스케이프 포함) */
+function hl(text, q) {
+  const s = String(text == null ? '' : text);
+  if (!q) return esc(s);
+  const lo = s.toLowerCase();
+  let out = '', i = 0, k;
+  while ((k = lo.indexOf(q, i)) >= 0) {
+    out += esc(s.slice(i, k)) + '<mark>' + esc(s.slice(k, k + q.length)) + '</mark>';
+    i = k + q.length;
+  }
+  return out + esc(s.slice(i));
+}
+function itemCard(p, i, showCat, opt = {}) {
+  const ph = orderedPhotos(i), c = CAT[i.cat], q = opt.q || '', sel = opt.sel;
+  const on = sel && sel.has(i.id);
+  const extra = q && ((i.company || '').toLowerCase().includes(q) || (i.action || '').toLowerCase().includes(q))
+    ? `<div class="extra">${i.company ? '업체 ' + hl(i.company, q) : ''}${i.company && i.action ? ' · ' : ''}${i.action ? '조치 ' + hl(i.action, q) : ''}</div>` : '';
+  const tag = showCat ? (sel ? `<span class="cattag">${c.name}</span>` : `<button class="cattag" data-chcat="${i.id}">${c.name} ▾</button>`) : '';
+  return `<div class="card item ${on ? 'selected' : ''}" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
+    ${sel ? `<span class="chk">✓</span>` : ''}
     <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">📷${ph.length}</span>` : '') : '📷'}</div>
-    <div class="body"><div class="where">${showCat ? `<button class="cattag" data-chcat="${i.id}">${c.name} ▾</button>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
-    <div class="issue">${esc(i.issue) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div></div></div>`;
+    <div class="body"><div class="where">${tag}<span class="no">${numberOf(p, i)}</span>${hl(i.floor, q)} · ${hl(i.location, q)}${i.equipment ? ' · ' + hl(i.equipment, q) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
+    <div class="issue">${hl(i.issue, q) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div>${extra}</div></div>`;
 }
 let ALL_ST = null;
 function vAll(app) {
@@ -444,22 +462,28 @@ function vAll(app) {
     return;
   }
   // 필터는 화면을 오가도 유지 (현장이 바뀌면 초기화)
-  if (!ALL_ST || ALL_ST.pid !== p.id) ALL_ST = { pid: p.id, cat: '', floor: '', q: '', status: '', photo: '', y: 0 };
+  if (!ALL_ST || ALL_ST.pid !== p.id) ALL_ST = { pid: p.id, cat: '', floor: '', q: '', status: '', photo: '', y: 0, sel: null };
   const st = ALL_ST;
+  const selMode = !!st.sel;
   const PHOTO_F = { none: ['사진 없음', n => n === 0], one: ['📷 1장', n => n === 1], multi: ['📷 2장↑', n => n >= 2], many: ['📷 3장↑', n => n >= 3] };
   const order = [...elevUnits(p), ...floorsOf(p)];
   const byOrder = (a, b) => (order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999);
   const base = p.items.filter(i => !st.cat || i.cat === st.cat);
   const floors = [...new Set(base.map(i => i.floor))].sort(byOrder);
-  const q = st.q.trim().toLowerCase();
-  const list = base.filter(i => (!st.floor || i.floor === st.floor) &&
-      (!st.status || (st.status === 'done' ? i.done : !i.done)) &&
-      (!st.photo || PHOTO_F[st.photo][1]((i.photos || []).length)) &&
-      (!q || [i.floor, i.location, i.equipment, i.issue, i.company, i.action].join(' ').toLowerCase().includes(q)))
-    .sort((a, b) => CATS.findIndex(c => c.key === a.cat) - CATS.findIndex(c => c.key === b.cat) || a.createdAt - b.createdAt);
-  app.innerHTML = topbar('점검목록', `${esc(p.name)} · 전체 ${p.items.length}건`, { backBtn: false }) +
+  const qOf = () => st.q.trim().toLowerCase();
+  const filtered = () => {
+    const q = qOf();
+    return base.filter(i => (!st.floor || i.floor === st.floor) &&
+        (!st.status || (st.status === 'done' ? i.done : !i.done)) &&
+        (!st.photo || PHOTO_F[st.photo][1]((i.photos || []).length)) &&
+        (!q || [i.floor, i.location, i.equipment, i.issue, i.company, i.action].join(' ').toLowerCase().includes(q)))
+      .sort((a, b) => CATS.findIndex(c => c.key === a.cat) - CATS.findIndex(c => c.key === b.cat) || a.createdAt - b.createdAt);
+  };
+
+  app.innerHTML = topbar('점검목록', `${esc(p.name)} · 전체 ${p.items.length}건`,
+      { backBtn: false, right: p.items.length ? `<button class="topbtn ${selMode ? 'on' : ''}" id="selbtn">${selMode ? '완료' : '선택'}</button>` : '' }) +
     `<div class="filters" style="flex-wrap:wrap;overflow:visible">
-      <div class="searchbox">${ICON.search}<input id="q" placeholder="장소·문제점 검색" value="${esc(st.q)}"></div>
+      <div class="searchbox">${ICON.search}<input id="q" type="search" enterkeyhint="search" placeholder="내용 검색 (장소·설비·문제점·업체·조치)" value="${esc(st.q)}"><button class="qclear ${st.q ? '' : 'hidden'}" id="qclear" aria-label="지우기">✕</button></div>
       <div class="chiprow"><button class="chip ${st.cat ? '' : 'on'}" data-c="">전체 ${p.items.length}</button>
         ${CATS.map(c => { const n = p.items.filter(i => i.cat === c.key).length; return `<button class="chip ${st.cat === c.key ? 'on' : ''}" data-c="${c.key}" style="${st.cat === c.key ? `background:${c.color};border-color:${c.color}` : ''}">${c.name} ${n}</button>`; }).join('')}</div>
       <div class="chiprow">
@@ -469,22 +493,43 @@ function vAll(app) {
       </div>
     </div>
     <div class="page" style="padding-top:12px">
-      <p class="note" style="margin:0 4px 10px">${list.length}건 표시</p>
-      <div id="lst">${list.map(i => itemCard(p, i, true)).join('')}</div>
-      ${list.length ? '' : `<div class="empty"><div class="big">🔍</div><p>${p.items.length ? '조건에 맞는 하자가 없습니다' : '<b>기록된 하자가 없습니다</b><br>아래 ＋ 버튼으로 시작하세요.'}</p></div>`}
-    </div>
-    <button class="fab" id="add">＋ 하자 등록</button>`;
+      <div class="listhead"><span id="cnt" class="note"></span>${selMode ? `<button class="btn sm ghost" id="selall">전체 선택</button>` : ''}</div>
+      ${selMode ? `<p class="note selhint">바꿀 하자를 눌러 체크하세요 · 검색/필터로 좁힌 뒤 [전체 선택]</p>` : ''}
+      <div id="lst"></div><div id="empty"></div>
+    </div>` +
+    (selMode ? `<div class="bulkbar"><span id="selcnt">0건 선택</span><button class="btn sm dark" id="bcat">공종 변경</button><button class="btn sm dark" id="bfloor">층 변경</button></div>`
+      : `<button class="fab" id="add">＋ 하자 등록</button>`);
+
   const rerender = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
-  $$('[data-c]', app).forEach(b => b.onclick = () => { st.cat = b.dataset.c; st.floor = ''; rerender(); });
-  $('#fl', app).onchange = e => { st.floor = e.target.value; rerender(); };
-  $('#stt', app).onchange = e => { st.status = e.target.value; rerender(); };
-  $('#pho', app).onchange = e => { st.photo = e.target.value; rerender(); };
-  let t;
-  $('#q', app).oninput = e => { st.q = e.target.value; clearTimeout(t); t = setTimeout(() => { render(); const i = $('#q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
-  if (st.y && !ctx.restored) { ctx.restored = true; const y = st.y; st.y = 0; setTimeout(() => window.scrollTo(0, y), 0); }
-  $$('#lst .item', app).forEach(el => el.onclick = async e => {
+  let list = [];
+  const updateSel = () => {
+    if (!st.sel) return;
+    const n = st.sel.size;
+    $('#selcnt').textContent = `${n}건 선택`;
+    $('#bcat').disabled = $('#bfloor').disabled = !n;
+    const all = list.length > 0 && list.every(i => st.sel.has(i.id));
+    $('#selall').textContent = all ? '전체 해제' : `전체 선택 (${list.length})`;
+  };
+  const drawList = () => {
+    list = filtered();
+    const q = qOf();
+    if (st.sel) { const vis = new Set(list.map(i => i.id)); [...st.sel].forEach(id => { if (!vis.has(id)) st.sel.delete(id); }); }
+    $('#cnt').innerHTML = `${list.length}건 표시${q ? ` · <b>"${esc(st.q.trim())}"</b> 검색` : ''}`;
+    $('#qclear').classList.toggle('hidden', !st.q);
+    $('#lst').innerHTML = list.map(i => itemCard(p, i, true, { q, sel: st.sel })).join('');
+    $('#empty').innerHTML = list.length ? '' : `<div class="empty"><div class="big">🔍</div><p>${p.items.length ? (q ? `"${esc(st.q.trim())}" 검색 결과가 없습니다` : '조건에 맞는 하자가 없습니다') : '<b>기록된 하자가 없습니다</b><br>아래 ＋ 버튼으로 시작하세요.'}</p></div>`;
+    $$('#lst .item').forEach(el => el.onclick = onCard);
+    updateSel();
+  };
+  async function onCard(e) {
+    const el = e.currentTarget, iid = el.dataset.iid;
+    if (st.sel) {
+      if (st.sel.has(iid)) st.sel.delete(iid); else st.sel.add(iid);
+      el.classList.toggle('selected', st.sel.has(iid));
+      return updateSel();
+    }
     if (e.target.closest('[data-chcat]')) {
-      const it = p.items.find(x => x.id === el.dataset.iid);
+      const it = p.items.find(x => x.id === iid);
       const oldNo = numberOf(p, it), oldName = CAT[it.cat].name;
       const k = await pickCategory('공종 변경', it.cat, `No.${oldNo} ${it.floor} · ${it.location}\n${it.issue}`);
       if (!k || k === it.cat) return;
@@ -494,12 +539,73 @@ function vAll(app) {
       return rerender();
     }
     st.y = window.scrollY;
-    go('item', { id: p.id, cat: el.dataset.cat, iid: el.dataset.iid });
-  });
-  $('#add', app).onclick = () => {
-    if (st.cat) return go('floor', { id: p.id, cat: st.cat });
-    openModal(`<h3>공종 선택</h3><div class="catgrid">${CATS.map(c => `<button class="card cat" style="--c:${c.color};min-height:72px;box-shadow:none;border:1.5px solid var(--line)" data-pick="${c.key}"><div class="cname">${c.name}</div></button>`).join('')}</div>`,
-      el => $$('[data-pick]', el).forEach(b => b.onclick = () => { closeTopModal(); go('floor', { id: p.id, cat: b.dataset.pick }); }));
+    go('item', { id: p.id, cat: el.dataset.cat, iid });
+  }
+  drawList();
+
+  // 필터
+  $$('[data-c]', app).forEach(b => b.onclick = () => { st.cat = b.dataset.c; st.floor = ''; rerender(); });
+  $('#fl', app).onchange = e => { st.floor = e.target.value; rerender(); };
+  $('#stt', app).onchange = e => { st.status = e.target.value; rerender(); };
+  $('#pho', app).onchange = e => { st.photo = e.target.value; rerender(); };
+  // 검색: 목록만 다시 그려서 키보드가 닫히지 않게
+  let t;
+  const qi = $('#q', app);
+  qi.oninput = () => { st.q = qi.value; clearTimeout(t); t = setTimeout(drawList, 200); };
+  qi.onkeydown = e => { if (e.key === 'Enter') { clearTimeout(t); drawList(); qi.blur(); } };
+  $('#qclear', app).onclick = () => { st.q = ''; qi.value = ''; drawList(); };
+  if (st.y && !ctx.restored) { ctx.restored = true; const y = st.y; st.y = 0; setTimeout(() => window.scrollTo(0, y), 0); }
+
+  // 선택 모드
+  if ($('#selbtn', app)) $('#selbtn', app).onclick = () => { st.sel = st.sel ? null : new Set(); rerender(); };
+  if (!selMode) {
+    $('#add', app).onclick = () => {
+      if (st.cat) return go('floor', { id: p.id, cat: st.cat });
+      openModal(`<h3>공종 선택</h3><div class="catgrid">${CATS.map(c => `<button class="card cat" style="--c:${c.color};min-height:72px;box-shadow:none;border:1.5px solid var(--line)" data-pick="${c.key}"><div class="cname">${c.name}</div></button>`).join('')}</div>`,
+        el => $$('[data-pick]', el).forEach(b => b.onclick = () => { closeTopModal(); go('floor', { id: p.id, cat: b.dataset.pick }); }));
+    };
+    return;
+  }
+  const chosen = () => p.items.filter(i => st.sel.has(i.id));
+  const finish = msg => { p.updatedAt = Date.now(); saveDB(); st.sel = null; toast(msg, 2600); rerender(); };
+  $('#selall', app).onclick = () => {
+    const all = list.length > 0 && list.every(i => st.sel.has(i.id));
+    list.forEach(i => all ? st.sel.delete(i.id) : st.sel.add(i.id));
+    $$('#lst .item').forEach(el => el.classList.toggle('selected', st.sel.has(el.dataset.iid)));
+    updateSel();
+  };
+  $('#bcat', app).onclick = async () => {
+    const its = chosen();
+    if (!its.length) return;
+    const cats = [...new Set(its.map(i => i.cat))];
+    const k = await pickCategory(`${its.length}건 공종 변경`, cats.length === 1 ? cats[0] : '',
+      `현재: ${cats.map(c => `${CAT[c].name} ${its.filter(i => i.cat === c).length}`).join(', ')}`);
+    if (!k) return;
+    const moving = its.filter(i => i.cat !== k);
+    if (!moving.length) { toast(`이미 모두 ${CAT[k].name}입니다`); return; }
+    if (!await confirmDialog('공종 일괄 변경', `${moving.length}건을 ${CAT[k].name}(으)로 옮길까요?\n옮긴 공종에서 번호가 등록 순서대로 다시 매겨집니다.`, '변경')) return;
+    const now = Date.now();
+    moving.forEach(i => { i.cat = k; i.updatedAt = now; });
+    finish(`${moving.length}건 → ${CAT[k].name}`);
+  };
+  $('#bfloor', app).onclick = () => {
+    const its = chosen();
+    if (!its.length) return;
+    const fls = [...new Set(its.map(i => i.floor))];
+    const anyElev = its.some(i => i.cat === 'elev');
+    openModal(`<h3>${its.length}건 층 변경</h3><p>현재: ${esc(fls.join(', '))}</p>${floorButtons(p, anyElev ? 'elev' : '', fls.length === 1 ? fls[0] : '')}`, el => {
+      $$('[data-floor]', el).forEach(b => b.onclick = async () => {
+        const v = await pickFloorValue(b);
+        if (!v) return;
+        closeTopModal();
+        const moving = its.filter(i => i.floor !== v);
+        if (!moving.length) { toast(`이미 모두 ${v}입니다`); return; }
+        if (!await confirmDialog('층 일괄 변경', `${moving.length}건의 층을 ${v}(으)로 바꿀까요?`, '변경')) return;
+        const now = Date.now();
+        moving.forEach(i => { i.floor = v; i.updatedAt = now; });
+        finish(`${moving.length}건 → ${v}`);
+      });
+    });
   };
 }
 

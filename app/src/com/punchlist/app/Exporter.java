@@ -64,6 +64,7 @@ public class Exporter {
         boolean excel = opt.optBoolean("excel", true);
         String photoMode = opt.optString("photoMode", "none"); // with | without | both | none
         boolean share = "share".equals(opt.optString("target", "save"));
+        final int[] xlq = PhotoUtil.excelPreset(opt.optString("excelQuality", "std"));
 
         List<XlsxWriter.Category> cats = new ArrayList<XlsxWriter.Category>();
         List<Row> rows = new ArrayList<Row>();
@@ -86,6 +87,11 @@ public class Exporter {
                 it.done = o.optBoolean("done", false);
                 JSONArray ph = o.optJSONArray("photos");
                 if (ph != null) for (int k = 0; k < ph.length(); k++) it.photoIds.add(ph.getString(k));
+                JSONArray xl = o.optJSONArray("xl");
+                if (xl != null) for (int k = 0; k < xl.length(); k++) {
+                    String x = xl.getString(k);
+                    if (it.photoIds.contains(x) && !it.excelPhotoIds.contains(x)) it.excelPhotoIds.add(x);
+                }
                 cat.items.add(it);
                 Row r = new Row();
                 r.item = it;
@@ -122,7 +128,7 @@ public class Exporter {
                 XlsxWriter w = new XlsxWriter(building, date, inspector, cats);
                 XlsxWriter.ImageSource src = new XlsxWriter.ImageSource() {
                     @Override public XlsxWriter.Img load(String id) throws IOException {
-                        return PhotoUtil.loadForExcel(new File(photoDir, id + ".jpg"));
+                        return PhotoUtil.loadForExcel(new File(photoDir, id + ".jpg"), xlq[0], xlq[1]);
                     }
                 };
                 XlsxWriter.Progress pr = new XlsxWriter.Progress() {

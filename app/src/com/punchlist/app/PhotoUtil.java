@@ -25,9 +25,12 @@ public final class PhotoUtil {
     public static final int STORE_EDGE = 1920;
     public static final int STORE_QUALITY = 88;
     public static final int THUMB_EDGE = 400;
-    /** 엑셀 삽입용: 긴 변 1024px (기존 양식 첨부 사진 약 250px 대비 4배 선명) */
-    public static final int EXCEL_EDGE = 1024;
-    public static final int EXCEL_QUALITY = 82;
+    /** 엑셀 삽입 화질: high 1024px/q82, std 800px/q75 (기본·추천), low 640px/q70 */
+    public static int[] excelPreset(String q) {
+        if ("high".equals(q)) return new int[]{1024, 82};
+        if ("low".equals(q)) return new int[]{640, 70};
+        return new int[]{800, 75};
+    }
 
     public static class Watermark {
         public String building = "", floor = "", location = "", category = "", equipment = "", issue = "", date = "";
@@ -50,14 +53,14 @@ public final class PhotoUtil {
     }
 
     /** 엑셀용 축소 JPEG */
-    public static XlsxWriter.Img loadForExcel(File f) throws IOException {
+    public static XlsxWriter.Img loadForExcel(File f, int edge, int quality) throws IOException {
         if (!f.exists()) return null;
-        Bitmap bm = decodeSampled(f.getAbsolutePath(), EXCEL_EDGE);
+        Bitmap bm = decodeSampled(f.getAbsolutePath(), edge);
         if (bm == null) return null;
-        Bitmap s = scaleToEdge(bm, EXCEL_EDGE);
+        Bitmap s = scaleToEdge(bm, edge);
         if (s != bm) bm.recycle();
         ByteArrayOutputStream bo = new ByteArrayOutputStream(256 * 1024);
-        s.compress(Bitmap.CompressFormat.JPEG, EXCEL_QUALITY, bo);
+        s.compress(Bitmap.CompressFormat.JPEG, quality, bo);
         XlsxWriter.Img img = new XlsxWriter.Img(bo.toByteArray(), s.getWidth(), s.getHeight());
         s.recycle();
         return img;

@@ -22,9 +22,16 @@ public class XlsxTest {
         }
         XlsxWriter.Item m = new XlsxWriter.Item(); m.no = 1; m.floor = "6호기"; m.location = "PIT"; m.issue = "누수"; m.photoIds.add("L9");
         cats.get(4).items.add(m);
+        // 사진 4장 중 3번째, 1번째를 엑셀 사진으로 선택
+        XlsxWriter.Item sel = new XlsxWriter.Item(); sel.no = 1; sel.floor = "2층"; sel.location = "복도"; sel.issue = "선택 테스트";
+        for (int p = 0; p < 4; p++) sel.photoIds.add("Lsel_" + p);
+        sel.excelPhotoIds.add("Lsel_2"); sel.excelPhotoIds.add("Lsel_0");
+        cats.get(1).items.add(sel);
+        final java.util.List<String> loaded = new ArrayList<>();
         XlsxWriter w = new XlsxWriter("테스트빌딩 A동", "2026-11-10", "홍길동", cats);
         try (OutputStream o = new FileOutputStream(a[0])) {
             w.write(o, id -> {
+                loaded.add(id);
                 boolean land = id.startsWith("L");
                 int W = land ? 960 : 720, H = land ? 720 : 960;
                 BufferedImage bi = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
@@ -36,6 +43,7 @@ public class XlsxTest {
                 return new XlsxWriter.Img(bo.toByteArray(), W, H);
             }, (d, t) -> {});
         }
+        System.out.println("loaded: " + loaded);
         System.out.println("ok");
     }
 }

@@ -37,6 +37,13 @@ public class XlsxWriter {
         public String action = "", company = "", actionDate = "";
         public boolean done;
         public List<String> photoIds = new ArrayList<String>();
+        /** 엑셀 현장사진 1·2 로 넣을 사진 (비어 있으면 앞의 2장) */
+        public List<String> excelPhotoIds = new ArrayList<String>();
+
+        public List<String> excelPhotos() {
+            List<String> src = excelPhotoIds.isEmpty() ? photoIds : excelPhotoIds;
+            return src.size() <= 2 ? src : src.subList(0, 2);
+        }
     }
 
     public static class Category {
@@ -80,7 +87,7 @@ public class XlsxWriter {
 
         int sheetCount = cats.size() + 1;
         int totalPhotos = 0;
-        for (Category c : cats) for (Item it : c.items) totalPhotos += Math.min(2, it.photoIds.size());
+        for (Category c : cats) for (Item it : c.items) totalPhotos += it.excelPhotos().size();
 
         // 사진/드로잉
         int imageNo = 0, donePhotos = 0;
@@ -95,10 +102,11 @@ public class XlsxWriter {
             int picNo = 0;
             for (int r = 0; r < c.items.size(); r++) {
                 Item it = c.items.get(r);
-                int n = Math.min(2, it.photoIds.size());
+                List<String> xl = it.excelPhotos();
+                int n = xl.size();
                 for (int p = 0; p < n; p++) {
                     Img img = null;
-                    try { img = images == null ? null : images.load(it.photoIds.get(p)); } catch (IOException e) { img = null; }
+                    try { img = images == null ? null : images.load(xl.get(p)); } catch (IOException e) { img = null; }
                     donePhotos++;
                     if (progress != null) progress.onPhoto(donePhotos, totalPhotos);
                     if (img == null) continue;

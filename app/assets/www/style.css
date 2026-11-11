@@ -225,3 +225,18 @@ body.tabs .toast { bottom: 150px; }
 .ctxbar .tag:active { filter: brightness(.9); }
 button.cattag { background: #fff; font-family: inherit; line-height: 1.5; }
 button.cattag:active { background: #f1f5f9; }
+
+/* ---------- 엑셀 사진 선택 */
+.toast { white-space: pre-line; }
+.ph.inxl { box-shadow: 0 0 0 3px var(--ok); }
+.ph .num { position: absolute; left: 4px; top: 4px; background: rgba(15,23,42,.7); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 8px; }
+.ph .xlbtn { position: absolute; left: 0; right: 0; bottom: 0; height: 32px; font-size: 12px; font-weight: 800; color: #fff; background: rgba(15,23,42,.62); }
+.ph .xlbtn.on { background: var(--ok); }
+.ph .xlbtn:active { filter: brightness(.9); }
+
+/* ---------- 엑셀 사진 화질 */
+.xlq { padding: 4px 14px 10px 48px; border-top: 1px solid var(--line); }
+.xlq .t { padding-top: 10px; }
+.opt.sub { padding: 10px 0; border-bottom: 0; }
+.opt.sub input { width: 20px; height: 20px; }
+.opt .est { font-size: 13px; font-weight: 700; color: var(--ink2); white-space: nowrap; }

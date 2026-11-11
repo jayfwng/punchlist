@@ -74,6 +74,24 @@ function elevUnits(p) {
   return Array.from({ length: n }, (_, i) => `${i + 1}호기`);
 }
 
+/** 엑셀 현장사진 1·2 로 들어갈 사진 id (선택값이 없으면 앞의 2장) */
+function xlOf(item) {
+  const ids = (item.photos || []).map(x => x.id);
+  if (Array.isArray(item.xl)) return item.xl.filter(x => ids.includes(x)).slice(0, 2);
+  return ids.slice(0, 2);
+}
+/** 엑셀 사진 2칸이 덜 찼으면 남은 사진으로 채움 */
+function fillXl(f) {
+  const ids = f.photos.map(x => x.id);
+  f.xl = (f.xl || []).filter(x => ids.includes(x));
+  for (const id of ids) { if (f.xl.length >= 2) break; if (!f.xl.includes(id)) f.xl.push(id); }
+}
+const XLQ = {
+  high: { name: '고화질', desc: '1024px · 사진 1장 약 80KB', kb: 80 },
+  std:  { name: '표준 (추천)', desc: '800px · 사진 1장 약 40KB — 화면·인쇄 모두 충분', kb: 42 },
+  low:  { name: '저용량', desc: '640px · 사진 1장 약 25KB — 카톡·메일 첨부용', kb: 26 },
+};
+
 function itemsOf(p, cat) {
   return p.items.filter(i => i.cat === cat).sort((a, b) => a.createdAt - b.createdAt);
 }
@@ -374,7 +392,7 @@ function vList(app, { id, cat }) {
       ${used.map(u => `<button class="chip ${f === u ? 'on' : ''}" data-f="${esc(u)}">${esc(u)} ${all.filter(i => i.floor === u).length}</button>`).join('')}</div>` : '') +
     `<div class="page" style="--c:${c.color}">
       ${list.map(i => {
-        const ph = i.photos || [];
+        const ph = orderedPhotos(i);
         return `<div class="card item" data-iid="${i.id}">
           <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
           <div class="body"><div class="where"><span class="no">${all.indexOf(i) + 1}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
@@ -386,6 +404,12 @@ function vList(app, { id, cat }) {
   $$('[data-f]', app).forEach(b => b.onclick = () => { ctx.filter = b.dataset.f; const y = window.scrollY; render(); window.scrollTo(0, y); });
   $$('.item', app).forEach(el => el.onclick = () => go('item', { id, cat, iid: el.dataset.iid }));
   $('#add', app).onclick = () => go('floor', { id, cat });
+}
+
+/** 엑셀 사진을 앞에 둔 사진 목록 (목록 썸네일용) */
+function orderedPhotos(i) {
+  const xl = xlOf(i), ph = i.photos || [];
+  return [...xl.map(id => ph.find(x => x.id === id)), ...ph.filter(x => !xl.includes(x.id))];
 }
 
 // ======================================================================= 공종 선택/변경 모달
@@ -406,7 +430,7 @@ function numberIn(p, cat, item) {
 
 // ======================================================================= 점검목록 (현재 현장 전체)
 function itemCard(p, i, showCat) {
-  const ph = i.photos || [], c = CAT[i.cat];
+  const ph = orderedPhotos(i), c = CAT[i.cat];
   return `<div class="card item" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
     <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
     <div class="body"><div class="where">${showCat ? `<button class="cattag" data-chcat="${i.id}">${c.name} ▾</button>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
@@ -527,11 +551,13 @@ function vItem(app, params) {
         issue: src.issue || '', photos: JSON.parse(JSON.stringify(src.photos || [])),
         company: src.company || '', action: src.action || '', actionDate: src.actionDate || '', done: !!src.done,
         cat: src.cat || params.cat,
+        xl: editing ? xlOf(editing) : [],
       };
       ctx.newPhotos = []; ctx.removed = [];
     }
   }
   const f = ctx.f;
+  if (!Array.isArray(f.xl)) { f.xl = []; fillXl(f); }
   if (!CAT[f.cat]) f.cat = editing ? editing.cat : params.cat;
   const cat = f.cat, c = CAT[cat];
   const catChanged = editing && editing.cat !== cat;
@@ -555,7 +581,7 @@ function vItem(app, params) {
       <div class="field"><label>현황 및 문제점 <span class="req">필수</span></label>
         <textarea class="input" id="issue" rows="3" placeholder="예: 출입문 손잡이 불량">${esc(f.issue)}</textarea>
         <div class="sugs">${(PHRASES[cat] || []).map(v => `<button class="chip" data-add="${esc(v)}">＋${esc(v)}</button>`).join('')}</div></div>
-      <div class="field"><label>현장 사진 <small>엑셀에는 앞의 2장이 들어갑니다</small></label>
+      <div class="field"><label>현장 사진 <small>초록 <b style="color:var(--ok)">엑셀</b> 2장이 엑셀에 들어갑니다 · 눌러서 변경</small></label>
         <div class="photobtns"><button class="btn cam" id="cam">📷 사진 촬영</button><button class="btn" id="gal">🖼 앨범</button></div>
         <div class="photos" id="photos"></div></div>
       <details class="more" ${showMore ? 'open' : ''}><summary>조치 정보 (업체 · 조치내역 · 완료)</summary>
@@ -571,9 +597,21 @@ function vItem(app, params) {
     </div>`;
 
   const renderPhotos = () => {
-    $('#photos').innerHTML = f.photos.map((ph, i) => `<div class="ph" data-pid="${ph.id}" style="background-image:url('${thumbUrl(ph.id)}')">
-      <span class="idx ${i < 2 ? 'xl' : ''}">${i + 1}${i < 2 ? ' · 엑셀' : ''}</span><button class="del" data-pdel="${ph.id}">×</button></div>`).join('');
-    $$('.ph').forEach(el => el.onclick = e => { if (!e.target.closest('.del')) lightbox(el.dataset.pid); });
+    $('#photos').innerHTML = f.photos.map((ph, i) => {
+      const k = f.xl.indexOf(ph.id);
+      return `<div class="ph ${k >= 0 ? 'inxl' : ''}" data-pid="${ph.id}" style="background-image:url('${thumbUrl(ph.id)}')">
+      <span class="num">${i + 1}</span><button class="del" data-pdel="${ph.id}">×</button>
+      <button class="xlbtn ${k >= 0 ? 'on' : ''}" data-xl="${ph.id}">${k >= 0 ? `✓ 엑셀 사진${k + 1}` : '＋ 엑셀'}</button></div>`;
+    }).join('');
+    $$('.ph').forEach(el => el.onclick = e => { if (!e.target.closest('.del') && !e.target.closest('.xlbtn')) lightbox(el.dataset.pid); });
+    $$('[data-xl]').forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const pid = b.dataset.xl;
+      if (f.xl.includes(pid)) f.xl = f.xl.filter(x => x !== pid);
+      else if (f.xl.length >= 2) { toast('엑셀 사진은 2장까지예요.\n먼저 다른 사진의 ✓ 엑셀을 눌러 해제하세요', 2800); return; }
+      else f.xl.push(pid);
+      ctx.dirty = true; saveDraft(); renderPhotos();
+    });
     $$('[data-pdel]').forEach(b => b.onclick = async e => {
       e.stopPropagation();
       if (!await confirmDialog('사진 삭제', '이 사진을 삭제할까요?', '삭제', true)) return;
@@ -581,6 +619,7 @@ function vItem(app, params) {
       f.photos = f.photos.filter(x => x.id !== pid);
       if (ctx.newPhotos.includes(pid)) { ctx.newPhotos = ctx.newPhotos.filter(x => x !== pid); N && N.deletePhoto(pid); }
       else ctx.removed.push(pid);
+      if (f.xl.includes(pid)) { f.xl = f.xl.filter(x => x !== pid); fillXl(f); }
       ctx.dirty = true; saveDraft(); renderPhotos();
     });
   };
@@ -631,7 +670,7 @@ function vItem(app, params) {
     const now = Date.now();
     const data = {
       floor: f.floor.trim(), location: f.location.trim(), equipment: f.equipment.trim(), issue: f.issue.trim(), photos: f.photos,
-      company: f.company.trim(), action: f.action.trim(), actionDate: f.actionDate.trim(), done: f.done, updatedAt: now, cat,
+      company: f.company.trim(), action: f.action.trim(), actionDate: f.actionDate.trim(), done: f.done, updatedAt: now, cat, xl: f.xl.filter(x => f.photos.some(ph => ph.id === x)).slice(0, 2),
     };
     if (editing) Object.assign(editing, data);
     else p.items.push(Object.assign({ id: uid(), createdAt: now }, data));
@@ -670,6 +709,7 @@ window.onNativePhotos = function () {
   if (!arr.length) return;
   if (!cur || cur.name !== 'item' || !ctx.f) { arr.forEach(x => N.deletePhoto(x.id)); return; }
   arr.forEach(x => { ctx.f.photos.push({ id: x.id, w: x.w, h: x.h }); ctx.newPhotos.push(x.id); });
+  fillXl(ctx.f);
   ctx.dirty = true;
   saveDraft();
   if (ctx.renderPhotos) ctx.renderPhotos();
@@ -680,7 +720,7 @@ window.onPhotoBusy = function (on) { $('#busy').classList.toggle('hidden', !on);
 // 브라우저 미리보기용 가짜 사진
 function mockPhoto() {
   const id = 'mock' + Date.now();
-  ctx.f.photos.push({ id, w: 1600, h: 1200 }); ctx.newPhotos.push(id); ctx.dirty = true; ctx.renderPhotos();
+  ctx.f.photos.push({ id, w: 1600, h: 1200 }); ctx.newPhotos.push(id); fillXl(ctx.f); ctx.dirty = true; ctx.renderPhotos();
 }
 
 // ======================================================================= 내보내기
@@ -688,17 +728,22 @@ function vExport(app, { id }) {
   const p = getProject(id);
   if (!ctx.o) {
     const has = CATS.filter(c => p.items.some(i => i.cat === c.key)).map(c => c.key);
-    ctx.o = { excel: true, photoMode: DB.settings.photoMode || 'with', cats: has.length ? has : CATS.map(c => c.key) };
+    ctx.o = { excel: true, photoMode: DB.settings.photoMode || 'with', xlq: DB.settings.excelQuality || 'std', cats: has.length ? has : CATS.map(c => c.key) };
   }
   const o = ctx.o;
   const nPhotos = p.items.filter(i => o.cats.includes(i.cat)).reduce((s, i) => s + (i.photos || []).length, 0);
   const nItems = p.items.filter(i => o.cats.includes(i.cat)).length;
+  const nXl = p.items.filter(i => o.cats.includes(i.cat)).reduce((s, i) => s + xlOf(i).length, 0);
+  const estMB = q => Math.max(0.1, (nXl * XLQ[q].kb + 30) / 1024).toFixed(1);
   const radio = (v, t, d) => `<label class="opt"><input type="radio" name="pm" value="${v}" ${o.photoMode === v ? 'checked' : ''}><div><div class="t">${t}</div><div class="d">${d}</div></div></label>`;
   app.innerHTML = topbar('내보내기', esc(p.name)) +
     `<div class="page">
       <div class="section-title">엑셀 파일</div>
       <div class="card"><label class="opt"><input type="checkbox" id="excel" ${o.excel ? 'checked' : ''}>
-        <div><div class="t">PUNCH LIST 엑셀 (.xlsx)</div><div class="d">집계표 + 공종별 시트, 현장사진 1·2 자동 삽입</div></div></label></div>
+        <div><div class="t">PUNCH LIST 엑셀 (.xlsx)</div><div class="d">집계표 + 공종별 시트, 선택한 엑셀 사진 2장 삽입</div></div></label>
+        <div class="xlq ${o.excel ? '' : 'hidden'}" id="xlqbox"><div class="t" style="font-size:13px;color:var(--ink2);margin-bottom:6px">엑셀 사진 화질 · 엑셀 사진 ${nXl}장</div>
+        ${Object.keys(XLQ).map(k => `<label class="opt sub"><input type="radio" name="xlq" value="${k}" ${o.xlq === k ? 'checked' : ''}>
+          <div style="flex:1"><div class="t">${XLQ[k].name}</div><div class="d">${XLQ[k].desc}</div></div><div class="est">약 ${estMB(k)}MB</div></label>`).join('')}</div></div>
       <div class="section-title">사진 파일 저장 방식</div>
       <div class="card">
         ${radio('with', '워터마크 있음', '사진 하단에 건물 / 층 / 위치 / 문제점 / 일시 표시')}
@@ -717,7 +762,8 @@ function vExport(app, { id }) {
     </div>
     <div class="bottombar"><button class="btn dark" id="share">${ICON.share}<span>공유</span></button><button class="btn primary" id="savebtn" style="flex:1.4">📥 휴대폰에 저장</button></div>`;
 
-  $('#excel').onchange = e => { o.excel = e.target.checked; };
+  $('#excel').onchange = e => { o.excel = e.target.checked; $('#xlqbox').classList.toggle('hidden', !o.excel); };
+  $$('input[name=xlq]', app).forEach(r => r.onchange = () => { o.xlq = r.value; DB.settings.excelQuality = r.value; saveDB(); });
   $$('input[name=pm]', app).forEach(r => r.onchange = () => { o.photoMode = r.value; DB.settings.photoMode = r.value; saveDB(); showPreview(); });
   $$('[data-c]', app).forEach(b => b.onclick = () => {
     const k = b.dataset.c;
@@ -758,14 +804,14 @@ function vExport(app, { id }) {
     if (!o.excel && o.photoMode === 'none') { toast('엑셀 또는 사진 중 하나는 선택하세요'); return; }
     if (!o.cats.length) { toast('공종을 하나 이상 선택하세요'); return; }
     const payload = {
-      target, excel: o.excel, photoMode: o.photoMode,
+      target, excel: o.excel, photoMode: o.photoMode, excelQuality: o.xlq,
       project: { name: p.name, date: p.date, inspector: p.inspector },
       cats: CATS.filter(c => o.cats.includes(c.key)).map(c => ({
         key: c.key, name: c.name, title: c.title, summary: c.summary,
         items: itemsOf(p, c.key).map((i, idx) => ({
           no: idx + 1, floor: i.floor, location: i.location, equipment: i.equipment, issue: i.issue,
           action: i.action, company: i.company, actionDate: i.actionDate, done: !!i.done,
-          createdAt: fmtTime(i.createdAt), photos: (i.photos || []).map(x => x.id),
+          createdAt: fmtTime(i.createdAt), photos: (i.photos || []).map(x => x.id), xl: xlOf(i),
         })),
       })),
     };

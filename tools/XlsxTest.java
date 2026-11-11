@@ -22,6 +22,10 @@ public class XlsxTest {
         }
         XlsxWriter.Item m = new XlsxWriter.Item(); m.no = 1; m.floor = "6호기"; m.location = "PIT"; m.issue = "누수"; m.photoIds.add("L9");
         cats.get(4).items.add(m);
+        // 16:9 가로 + 세로 사진
+        XlsxWriter.Item w169 = new XlsxWriter.Item(); w169.no = 2; w169.floor = "옥상"; w169.location = "기계실"; w169.issue = "16:9 + 세로";
+        w169.photoIds.add("W16x9"); w169.photoIds.add("Pport");
+        cats.get(4).items.add(w169);
         // 사진 4장 중 3번째, 1번째를 엑셀 사진으로 선택
         XlsxWriter.Item sel = new XlsxWriter.Item(); sel.no = 1; sel.floor = "2층"; sel.location = "복도"; sel.issue = "선택 테스트";
         for (int p = 0; p < 4; p++) sel.photoIds.add("Lsel_" + p);
@@ -29,11 +33,12 @@ public class XlsxTest {
         cats.get(1).items.add(sel);
         final java.util.List<String> loaded = new ArrayList<>();
         XlsxWriter w = new XlsxWriter("테스트빌딩 A동", "2026-11-10", "홍길동", cats);
+        w.setCropPortrait(a.length > 1 && "crop".equals(a[1]));
         try (OutputStream o = new FileOutputStream(a[0])) {
             w.write(o, id -> {
                 loaded.add(id);
-                boolean land = id.startsWith("L");
-                int W = land ? 960 : 720, H = land ? 720 : 960;
+                boolean land = id.startsWith("L"), wide = id.startsWith("W");
+                int W = wide ? 1280 : land ? 960 : 720, H = wide ? 720 : land ? 720 : 960;
                 BufferedImage bi = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
                 Graphics2D g = bi.createGraphics();
                 g.setColor(new Color(60, 120, 200)); g.fillRect(0, 0, W, H);

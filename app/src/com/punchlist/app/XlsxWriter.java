@@ -60,7 +60,10 @@ public class XlsxWriter {
     private static final long EMU_PER_PX = 9525L;
 
     // 열 너비(문자 단위) — 원본 양식과 동일
-    private static final double[] COL_W = {4.25, 9.75, 21.5, 23.625, 40.625, 30.625, 30.625, 30.625, 10.625, 30.625, 30.625, 30.625, 2.125, 10.0};
+    private static final double PHOTO_COL_W = 24.19; // 행 높이 109.5pt(146px) 기준 사진칸 194px → 사진 192x144 (4:3)
+    private static final double[] COL_W = {4.25, 9.75, 21.5, 23.625, 40.625, PHOTO_COL_W, PHOTO_COL_W, 30.625, 10.625, 30.625, PHOTO_COL_W, PHOTO_COL_W, 2.125, 10.0};
+    /** 사진칸 비율 (가로:세로 = 4:3) */
+    private static final double BOX_RATIO = 4.0 / 3.0;
     private static final double ROW_H_PT = 109.5; // 데이터 행 높이
     private static final String[] HEADERS = {"NO", "층", "장소", "설비(장비)명", "현황 및 문제점", "현장 사진 1", "현장 사진 2",
             "조치 내역", "업체명", "조치일자", "조치사진 1", "조치사진 2"};
@@ -73,6 +76,10 @@ public class XlsxWriter {
     private final String inspectDate;   // 표시용 yyyy-MM-dd
     private final String inspector;
     private final List<Category> cats;
+    /** 세로 사진: false = 전체 보이기(좌우 여백), true = 가운데를 잘라 칸 채우기 */
+    private boolean cropPortrait;
+
+    public void setCropPortrait(boolean v) { cropPortrait = v; }
 
     public XlsxWriter(String buildingName, String inspectDate, String inspector, List<Category> cats) {
         this.buildingName = buildingName == null ? "" : buildingName;
@@ -117,7 +124,7 @@ public class XlsxWriter {
                     drawingRels.append("<Relationship Id=\"rId").append(picNo)
                             .append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/")
                             .append(media).append("\"/>");
-                    drawing.append(picAnchor(picNo, 5 + p, 3 + r, img.width, img.height));
+                    drawing.append(picAnchor(picNo, 5 + p, 3 + r, img.width, img.height, cropPortrait));
                 }
             }
             boolean hasDrawing = picNo > 0;
@@ -358,25 +365,45 @@ public class XlsxWriter {
     }
 
     /** 셀 박스 안에 비율 유지하며 가운데 배치 */
-    private static String picAnchor(int id, int col, int row, int imgW, int imgH) {
+    /**
+     * 사진칸(4:3)에 사진 배치.
+     * 가로 사진: 칸을 꽉 채움 (비율이 다르면 엑셀 '자르기'로 가장자리만 잘라냄 — 원본은 파일에 그대로 남음)
+     * 세로 사진: cropPortrait 이면 위아래를 잘라 채움, 아니면 전체가 보이게 가운데 배치
+     */
+    static String picAnchor(int id, int col, int row, int imgW, int imgH, boolean cropPortrait) {
         double colPx = colWidthPx(COL_W[col]);
         double rowPx = ROW_H_PT * 96.0 / 72.0;
-        double pad = 4;
-        double boxW = colPx - pad * 2, boxH = rowPx - pad * 2;
-        double scale = Math.min(boxW / imgW, boxH / imgH);
-        long w = Math.round(imgW * scale), h = Math.round(imgH * scale);
+        double inset = 1;
+        double boxH = rowPx - inset * 2;
+        double boxW = Math.min(colPx - inset * 2, boxH * BOX_RATIO);
+        boxH = boxW / BOX_RATIO;
+        double ar = imgW / (double) imgH;
+        boolean landscape = ar > 1.05;
+        double cl = 0, ct = 0; // 자르기 비율 (좌우 각각, 위아래 각각)
+        long w, h;
+        if (landscape || cropPortrait) {
+            w = Math.round(boxW); h = Math.round(boxH);
+            if (ar > BOX_RATIO) cl = (1 - BOX_RATIO / ar) / 2;      // 16:9 등 → 좌우 잘라냄
+            else if (ar < BOX_RATIO) ct = (1 - ar / BOX_RATIO) / 2; // 세로/정사각 → 위아래 잘라냄
+        } else {
+            double scale = Math.min(boxW / imgW, boxH / imgH);
+            w = Math.round(imgW * scale); h = Math.round(imgH * scale);
+        }
+        String src = (cl > 0.001 || ct > 0.001)
+                ? "<a:srcRect l=\"" + Math.round(cl * 100000) + "\" t=\"" + Math.round(ct * 100000) + "\" r=\"" + Math.round(cl * 100000) + "\" b=\"" + Math.round(ct * 100000) + "\"/>"
+                : "";
         long offX = Math.round((colPx - w) / 2.0), offY = Math.round((rowPx - h) / 2.0);
         long cx = w * EMU_PER_PX, cy = h * EMU_PER_PX;
         return "<xdr:oneCellAnchor><xdr:from><xdr:col>" + col + "</xdr:col><xdr:colOff>" + (offX * EMU_PER_PX) + "</xdr:colOff><xdr:row>" + row +
                 "</xdr:row><xdr:rowOff>" + (offY * EMU_PER_PX) + "</xdr:rowOff></xdr:from><xdr:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/>" +
                 "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"" + (id + 1) + "\" name=\"그림 " + id + "\"/><xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr></xdr:nvPicPr>" +
-                "<xdr:blipFill><a:blip xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:embed=\"rId" + id + "\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>" +
+                "<xdr:blipFill><a:blip xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:embed=\"rId" + id + "\"/>" + src + "<a:stretch><a:fillRect/></a:stretch></xdr:blipFill>" +
                 "<xdr:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"" + cx + "\" cy=\"" + cy + "\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>";
     }
 
     private static double colWidthPx(double chars) {
-        // 맑은 고딕 11 기본 글꼴의 최대 숫자폭 7px 기준
-        return Math.floor((256 * chars + Math.floor(128.0 / 7)) / 256 * 7);
+        // 맑은 고딕 11 기본 글꼴의 최대 숫자폭 8px 기준 (한글 엑셀: 너비 8.38 = 72픽셀)
+        return Math.floor((256 * chars + Math.floor(128.0 / 8)) / 256 * 8);
     }
 
     // ------------------------------------------------------------------ styles

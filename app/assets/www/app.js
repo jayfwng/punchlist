@@ -843,7 +843,7 @@ function vExport(app, { id }) {
   const p = getProject(id);
   if (!ctx.o) {
     const has = CATS.filter(c => p.items.some(i => i.cat === c.key)).map(c => c.key);
-    ctx.o = { excel: true, photoMode: DB.settings.photoMode || 'with', xlq: DB.settings.excelQuality || 'std', cats: has.length ? has : CATS.map(c => c.key) };
+    ctx.o = { excel: true, photoMode: DB.settings.photoMode || 'with', xlq: DB.settings.excelQuality || 'std', pmode: DB.settings.portraitMode || 'fit', cats: has.length ? has : CATS.map(c => c.key) };
   }
   const o = ctx.o;
   const nPhotos = p.items.filter(i => o.cats.includes(i.cat)).reduce((s, i) => s + (i.photos || []).length, 0);
@@ -858,7 +858,13 @@ function vExport(app, { id }) {
         <div><div class="t">PUNCH LIST 엑셀 (.xlsx)</div><div class="d">집계표 + 공종별 시트, 선택한 엑셀 사진 2장 삽입</div></div></label>
         <div class="xlq ${o.excel ? '' : 'hidden'}" id="xlqbox"><div class="t" style="font-size:13px;color:var(--ink2);margin-bottom:6px">엑셀 사진 화질 · 엑셀 사진 ${nXl}장</div>
         ${Object.keys(XLQ).map(k => `<label class="opt sub"><input type="radio" name="xlq" value="${k}" ${o.xlq === k ? 'checked' : ''}>
-          <div style="flex:1"><div class="t">${XLQ[k].name}</div><div class="d">${XLQ[k].desc}</div></div><div class="est">약 ${estMB(k)}MB</div></label>`).join('')}</div></div>
+          <div style="flex:1"><div class="t">${XLQ[k].name}</div><div class="d">${XLQ[k].desc}</div></div><div class="est">약 ${estMB(k)}MB</div></label>`).join('')}
+        <div class="t" style="font-size:13px;color:var(--ink2);margin:8px 0 6px">세로 사진 (가로 사진은 칸에 꽉 차게 들어갑니다)</div>
+        <label class="opt sub"><input type="radio" name="pmode" value="fit" ${o.pmode === 'fit' ? 'checked' : ''}>
+          <div><div class="t">전체 보이기 (추천)</div><div class="d">사진이 잘리지 않고 좌우에 여백</div></div></label>
+        <label class="opt sub"><input type="radio" name="pmode" value="crop" ${o.pmode === 'crop' ? 'checked' : ''}>
+          <div><div class="t">잘라서 칸 채우기</div><div class="d">가운데 부분만 보이게 위아래를 자름 · 엑셀 [그림 서식 → 자르기]로 다시 늘릴 수 있음</div></div></label>
+        </div></div>
       <div class="section-title">사진 파일 저장 방식</div>
       <div class="card">
         ${radio('with', '워터마크 있음', '사진 하단에 건물 / 층 / 위치 / 문제점 / 일시 표시')}
@@ -879,6 +885,7 @@ function vExport(app, { id }) {
 
   $('#excel').onchange = e => { o.excel = e.target.checked; $('#xlqbox').classList.toggle('hidden', !o.excel); };
   $$('input[name=xlq]', app).forEach(r => r.onchange = () => { o.xlq = r.value; DB.settings.excelQuality = r.value; saveDB(); });
+  $$('input[name=pmode]', app).forEach(r => r.onchange = () => { o.pmode = r.value; DB.settings.portraitMode = r.value; saveDB(); });
   $$('input[name=pm]', app).forEach(r => r.onchange = () => { o.photoMode = r.value; DB.settings.photoMode = r.value; saveDB(); showPreview(); });
   $$('[data-c]', app).forEach(b => b.onclick = () => {
     const k = b.dataset.c;
@@ -919,7 +926,7 @@ function vExport(app, { id }) {
     if (!o.excel && o.photoMode === 'none') { toast('엑셀 또는 사진 중 하나는 선택하세요'); return; }
     if (!o.cats.length) { toast('공종을 하나 이상 선택하세요'); return; }
     const payload = {
-      target, excel: o.excel, photoMode: o.photoMode, excelQuality: o.xlq,
+      target, excel: o.excel, photoMode: o.photoMode, excelQuality: o.xlq, portraitMode: o.pmode,
       project: { name: p.name, date: p.date, inspector: p.inspector },
       cats: CATS.filter(c => o.cats.includes(c.key)).map(c => ({
         key: c.key, name: c.name, title: c.title, summary: c.summary,

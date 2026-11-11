@@ -126,6 +126,7 @@ public class Exporter {
             if (excel) {
                 listener.progress("엑셀 생성 중…", 0);
                 XlsxWriter w = new XlsxWriter(building, date, inspector, cats);
+                w.setCropPortrait("crop".equals(opt.optString("portraitMode", "fit")));
                 XlsxWriter.ImageSource src = new XlsxWriter.ImageSource() {
                     @Override public XlsxWriter.Img load(String id) throws IOException {
                         return PhotoUtil.loadForExcel(new File(photoDir, id + ".jpg"), xlq[0], xlq[1]);

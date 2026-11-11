@@ -189,3 +189,33 @@ details.more[open] { padding-bottom: 4px; }
 .pbar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 .pmsg { font-size: 14px; color: var(--ink2); }
 .result li { margin-bottom: 6px; font-size: 14px; word-break: break-all; }
+
+/* ---------- 하단 탭 */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+  background: #fff; border-top: 1px solid var(--line); display: flex; }
+.tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--ink3); font-size: 12px; font-weight: 700; }
+.tabbar button svg { width: 24px; height: 24px; }
+.tabbar button.on { color: var(--accent); }
+.tabbar button:active { background: #f8fafc; }
+body.tabs .bottombar { bottom: calc(64px + env(safe-area-inset-bottom)); padding-bottom: 10px; }
+body.tabs .fab { bottom: calc(80px + env(safe-area-inset-bottom)); }
+body.tabs .page { padding-bottom: 170px; }
+body.tabs .toast { bottom: 150px; }
+
+/* ---------- 현장 전환 / 목록 */
+.projsw { flex: 1; min-width: 0; text-align: left; color: #fff; padding: 4px 6px; border-radius: 10px; }
+.projsw:active { background: rgba(255,255,255,.12); }
+.projsw .t { display: block; font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.projsw .caret { font-size: 13px; color: #fdba74; }
+.projsw .sub { display: block; font-size: 12px; color: #cbd5e1; }
+.proj.cur { box-shadow: 0 0 0 2px var(--accent); }
+.curmark { font-size: 11px; font-weight: 800; color: #fff; background: var(--accent); border-radius: 6px; padding: 1px 6px; margin-right: 6px; vertical-align: middle; }
+.cattag { display: inline-block; font-size: 11px; font-weight: 800; color: var(--c); border: 1.5px solid var(--c); border-radius: 6px; padding: 0 5px; margin-right: 5px; }
+
+/* ---------- 점검목록 필터 */
+.searchbox { display: flex; align-items: center; gap: 8px; width: 100%; height: 44px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #f8fafc; color: var(--ink3); }
+.searchbox svg { width: 20px; height: 20px; flex: none; }
+.searchbox input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; min-width: 0; }
+.chiprow { display: flex; gap: 6px; overflow-x: auto; width: 100%; scrollbar-width: none; }
+.chiprow::-webkit-scrollbar { display: none; }
+.sel { flex: 1; height: 40px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; padding: 0 10px; font-size: 15px; font-weight: 600; color: var(--ink2); }

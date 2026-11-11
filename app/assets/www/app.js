@@ -102,17 +102,44 @@ function back() {
     if (cur.name === 'item') clearDraft();
     stack.pop(); ctx = {}; render(); return true;
   }
+  if (cur && cur.name !== 'dash') { setTab('home'); return true; }
   return false;
 }
+const ROOT = { home: 'dash', all: 'all', settings: 'settings' };
+function setTab(t) { stack = [{ name: ROOT[t], params: {} }]; ctx = {}; render(); window.scrollTo(0, 0); }
+function tabOf(name) { return name === 'all' ? 'all' : name === 'settings' ? 'settings' : 'home'; }
+const TAB_VIEWS = ['dash', 'projects', 'list', 'all', 'settings'];
 window.onBack = back;
 
 function render() {
   const cur = stack[stack.length - 1];
   const app = $('#app');
-  const views = { home: vHome, setup: vSetup, project: vProject, list: vList, floor: vFloor, item: vItem, export: vExport, settings: vSettings };
+  const views = { dash: vDash, projects: vProjects, setup: vSetup, list: vList, floor: vFloor, item: vItem, export: vExport, all: vAll, settings: vSettings };
   app.innerHTML = '';
-  (views[cur.name] || vHome)(app, cur.params);
+  (views[cur.name] || vDash)(app, cur.params);
+  const tabs = TAB_VIEWS.includes(cur.name);
+  document.body.classList.toggle('tabs', tabs);
+  if (tabs) {
+    const t = tabOf(cur.name);
+    const nav = document.createElement('nav');
+    nav.className = 'tabbar';
+    nav.innerHTML = [['home', ICON.home, '홈'], ['all', ICON.list, '점검목록'], ['settings', ICON.gear, '설정']]
+      .map(([k, ic, label]) => `<button class="${t === k ? 'on' : ''}" data-tab="${k}">${ic}<span>${label}</span></button>`).join('');
+    nav.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+    app.appendChild(nav);
+  }
 }
+
+/** 현재 선택된 현장 (없으면 최근 수정 현장) */
+function curProject() {
+  let p = getProject(DB.settings.currentId);
+  if (!p && DB.projects.length) {
+    p = [...DB.projects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    DB.settings.currentId = p.id;
+  }
+  return p || null;
+}
+function selectProject(id) { DB.settings.currentId = id; saveDB(); setTab('home'); }
 
 // ======================================================================= 공통 UI
 const ICON = {
@@ -121,6 +148,9 @@ const ICON = {
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>',
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
 };
 
@@ -201,25 +231,24 @@ document.addEventListener('click', e => {
   if (b) { e.preventDefault(); back(); }
 });
 
-// ======================================================================= 홈
-function vHome(app) {
+// ======================================================================= 현장 목록
+function vProjects(app, params, embedded) {
   const ps = [...DB.projects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  app.innerHTML = topbar('펀치리스트', '건물 하자 점검', { backBtn: false, right: `<button class="iconbtn" id="settings" aria-label="설정">${ICON.gear}</button>` }) +
+  const cur = DB.settings.currentId;
+  app.innerHTML = (embedded ? topbar('펀치리스트', '건물 하자 점검', { backBtn: false }) : topbar('현장 선택', '점검할 현장을 고르세요')) +
     `<div class="page">
-      ${ps.length ? '<div class="section-title">점검 현장</div>' : ''}
       ${ps.map(p => {
         const n = p.items.length, d = p.items.filter(i => i.done).length;
-        return `<div class="card proj" data-id="${p.id}">
-          <div class="meta"><div class="name">${esc(p.name)}</div>
+        return `<div class="card proj ${p.id === cur ? 'cur' : ''}" data-id="${p.id}">
+          <div class="meta"><div class="name">${p.id === cur ? '<span class="curmark">현재</span>' : ''}${esc(p.name)}</div>
           <div class="info">${esc(p.date || '')}${p.inspector ? ' · ' + esc(p.inspector) : ''} · ${floorsOf(p).length}개 층</div></div>
           <div class="count"><b>${n}</b>건${d ? ` (완료 ${d})` : ''}</div></div>`;
       }).join('')}
       ${ps.length ? '' : `<div class="empty"><div class="big">📋</div><p><b>등록된 현장이 없습니다</b><br>아래 버튼으로 건물명과 층수를 입력해 시작하세요.</p></div>`}
-    </div>
-    <div class="bottombar"><button class="btn primary" id="new">＋ 새 현장 등록</button></div>`;
-  $$('.proj', app).forEach(el => el.onclick = () => go('project', { id: el.dataset.id }));
+      <button class="btn primary block" id="new" style="margin-top:6px">＋ 새 현장 등록</button>
+    </div>`;
+  $$('.proj', app).forEach(el => el.onclick = () => selectProject(el.dataset.id));
   $('#new', app).onclick = () => go('setup', {});
-  $('#settings', app).onclick = () => go('settings');
 }
 
 // ======================================================================= 현장 등록/수정
@@ -285,27 +314,30 @@ function vSetup(app, { id }) {
     else { p.createdAt = Date.now(); DB.projects.push(p); }
     saveDB();
     toast(editing ? '수정되었습니다' : '현장이 등록되었습니다');
-    if (editing) back(); else go('project', { id: p.id }, true);
+    if (editing) back(); else { DB.settings.currentId = p.id; saveDB(); setTab('home'); }
   };
   if (editing) $('#del', app).onclick = async () => {
     const ok = await confirmDialog('현장 삭제', `"${editing.name}"의 하자 ${editing.items.length}건과 사진이 모두 삭제됩니다.\n되돌릴 수 없습니다.`, '삭제', true);
     if (!ok) return;
     editing.items.forEach(i => (i.photos || []).forEach(ph => N && N.deletePhoto(ph.id)));
     DB.projects = DB.projects.filter(x => x !== editing);
+    if (DB.settings.currentId === editing.id) DB.settings.currentId = null;
     saveDB();
-    stack = [{ name: 'home', params: {} }];
-    ctx = {}; render();
+    setTab('home');
     toast('삭제되었습니다');
   };
 }
 
-// ======================================================================= 현장 대시보드
-function vProject(app, { id }) {
-  const p = getProject(id);
-  if (!p) { stack = [{ name: 'home', params: {} }]; return render(); }
+// ======================================================================= 홈 (현재 현장 대시보드)
+function vDash(app) {
+  const p = curProject();
+  if (!p) return vProjects(app, {}, true);
+  const id = p.id;
   const n = p.items.length, d = p.items.filter(i => i.done).length;
-  app.innerHTML = topbar(esc(p.name), `${esc(p.date || '')}${p.inspector ? ' · ' + esc(p.inspector) : ''}`,
-    { right: `<button class="iconbtn" id="edit" aria-label="수정">${ICON.edit}</button>` }) +
+  app.innerHTML = `<div class="top"><span style="width:8px"></span>
+      <button class="projsw" id="sw"><span class="t">${esc(p.name)} <span class="caret">▾</span></span>
+      <span class="sub">${esc(p.date || '')}${p.inspector ? ' · ' + esc(p.inspector) : ''} · 현장 변경</span></button>
+      <button class="iconbtn" id="edit" aria-label="수정">${ICON.edit}</button></div>` +
     `<div class="page">
       <div class="card">
         <div class="summary"><div class="s"><b>${n}</b><span>전체 하자</span></div><div class="s"><b>${n - d}</b><span>진행중</span></div><div class="s"><b style="color:var(--ok)">${d}</b><span>조치완료</span></div>
@@ -322,6 +354,7 @@ function vProject(app, { id }) {
       </div>
     </div>
     <div class="bottombar"><button class="btn dark" id="exp">${ICON.share}<span>엑셀 · 사진 내보내기</span></button></div>`;
+  $('#sw', app).onclick = () => go('projects');
   $$('.cat', app).forEach(b => b.onclick = () => go('list', { id, cat: b.dataset.cat }));
   $('#edit', app).onclick = () => go('setup', { id });
   $('#exp', app).onclick = () => go('export', { id });
@@ -353,6 +386,60 @@ function vList(app, { id, cat }) {
   $$('[data-f]', app).forEach(b => b.onclick = () => { ctx.filter = b.dataset.f; const y = window.scrollY; render(); window.scrollTo(0, y); });
   $$('.item', app).forEach(el => el.onclick = () => go('item', { id, cat, iid: el.dataset.iid }));
   $('#add', app).onclick = () => go('floor', { id, cat });
+}
+
+// ======================================================================= 점검목록 (현재 현장 전체)
+function itemCard(p, i, showCat) {
+  const ph = i.photos || [], c = CAT[i.cat];
+  return `<div class="card item" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
+    <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
+    <div class="body"><div class="where">${showCat ? `<span class="cattag">${c.name}</span>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
+    <div class="issue">${esc(i.issue) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div></div></div>`;
+}
+function vAll(app) {
+  const p = curProject();
+  if (!p) {
+    app.innerHTML = topbar('점검목록', '', { backBtn: false }) + `<div class="page"><div class="empty"><div class="big">📋</div><p><b>먼저 현장을 등록하세요</b></p></div></div>`;
+    return;
+  }
+  const st = ctx.st || (ctx.st = { cat: '', floor: '', q: '', status: '' });
+  const order = [...elevUnits(p), ...floorsOf(p)];
+  const byOrder = (a, b) => (order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999);
+  const base = p.items.filter(i => !st.cat || i.cat === st.cat);
+  const floors = [...new Set(base.map(i => i.floor))].sort(byOrder);
+  const q = st.q.trim().toLowerCase();
+  const list = base.filter(i => (!st.floor || i.floor === st.floor) &&
+      (!st.status || (st.status === 'done' ? i.done : !i.done)) &&
+      (!q || [i.floor, i.location, i.equipment, i.issue, i.company, i.action].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => CATS.findIndex(c => c.key === a.cat) - CATS.findIndex(c => c.key === b.cat) || a.createdAt - b.createdAt);
+  app.innerHTML = topbar('점검목록', `${esc(p.name)} · 전체 ${p.items.length}건`, { backBtn: false }) +
+    `<div class="filters" style="flex-wrap:wrap;overflow:visible">
+      <div class="searchbox">${ICON.search}<input id="q" placeholder="장소·문제점 검색" value="${esc(st.q)}"></div>
+      <div class="chiprow"><button class="chip ${st.cat ? '' : 'on'}" data-c="">전체 ${p.items.length}</button>
+        ${CATS.map(c => { const n = p.items.filter(i => i.cat === c.key).length; return `<button class="chip ${st.cat === c.key ? 'on' : ''}" data-c="${c.key}" style="${st.cat === c.key ? `background:${c.color};border-color:${c.color}` : ''}">${c.name} ${n}</button>`; }).join('')}</div>
+      <div class="chiprow">
+        <select class="sel" id="fl"><option value="">층 전체</option>${floors.map(f => `<option ${st.floor === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
+        <select class="sel" id="stt"><option value="">상태 전체</option><option value="open" ${st.status === 'open' ? 'selected' : ''}>진행중</option><option value="done" ${st.status === 'done' ? 'selected' : ''}>조치완료</option></select>
+      </div>
+    </div>
+    <div class="page" style="padding-top:12px">
+      <p class="note" style="margin:0 4px 10px">${list.length}건 표시</p>
+      <div id="lst">${list.map(i => itemCard(p, i, true)).join('')}</div>
+      ${list.length ? '' : `<div class="empty"><div class="big">🔍</div><p>${p.items.length ? '조건에 맞는 하자가 없습니다' : '<b>기록된 하자가 없습니다</b><br>아래 ＋ 버튼으로 시작하세요.'}</p></div>`}
+    </div>
+    <button class="fab" id="add">＋ 하자 등록</button>`;
+  const rerender = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
+  $$('[data-c]', app).forEach(b => b.onclick = () => { st.cat = b.dataset.c; st.floor = ''; rerender(); });
+  $('#fl', app).onchange = e => { st.floor = e.target.value; rerender(); };
+  $('#stt', app).onchange = e => { st.status = e.target.value; rerender(); };
+  let t;
+  $('#q', app).oninput = e => { st.q = e.target.value; clearTimeout(t); t = setTimeout(() => { render(); const i = $('#q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  $$('#lst .item', app).forEach(el => el.onclick = () => go('item', { id: p.id, cat: el.dataset.cat, iid: el.dataset.iid }));
+  $('#add', app).onclick = () => {
+    if (st.cat) return go('floor', { id: p.id, cat: st.cat });
+    openModal(`<h3>공종 선택</h3><div class="catgrid">${CATS.map(c => `<button class="card cat" style="--c:${c.color};min-height:72px;box-shadow:none;border:1.5px solid var(--line)" data-pick="${c.key}"><div class="cname">${c.name}</div></button>`).join('')}</div>`,
+      el => $$('[data-pick]', el).forEach(b => b.onclick = () => { closeTopModal(); go('floor', { id: p.id, cat: b.dataset.pick }); }));
+  };
 }
 
 // ======================================================================= 1단계: 층 선택
@@ -672,7 +759,7 @@ function vSettings(app) {
   let info = { photos: 0, mb: 0 };
   try { if (N) info = JSON.parse(N.storageInfo()); } catch (e) { }
   const nItems = DB.projects.reduce((s, p) => s + p.items.length, 0);
-  app.innerHTML = topbar('설정', '') +
+  app.innerHTML = topbar('설정', '', { backBtn: false }) +
     `<div class="page">
       <div class="section-title">데이터 백업 (현장·하자·사진 전체)</div>
       <div class="card" style="padding:14px">
@@ -714,7 +801,7 @@ function vSettings(app) {
     DB = { version: 1, projects: [], settings: { photoMode: DB.settings.photoMode || 'with', seededW4: true } };
     saveDB();
     clearDraft();
-    stack = [{ name: 'home', params: {} }]; ctx = {}; render();
+    setTab('home');
     toast('초기화되었습니다');
   };
 }
@@ -734,7 +821,7 @@ window.onBackupImported = function (r) {
     DB.projects.forEach(p => p.items.forEach(i => (i.photos || []).forEach(ph => keep.push(ph.id))));
     if (N) N.cleanupPhotos(JSON.stringify(keep));
     clearDraft();
-    stack = [{ name: 'home', params: {} }]; ctx = {}; render();
+    setTab('home');
     const n = DB.projects.reduce((s, p) => s + p.items.length, 0);
     openModal(`<h3>✅ 불러오기 완료</h3><p>현장 ${DB.projects.length}곳 · 하자 ${n}건 · 사진 ${r.photos}장</p><div class="acts"><button class="btn dark" onclick="closeTopModal()">확인</button></div>`);
   } catch (e) {
@@ -760,12 +847,12 @@ function seedDefaults() {
 function start() {
   loadDB();
   seedDefaults();
-  stack = [{ name: 'home', params: {} }];
+  stack = [{ name: 'dash', params: {} }];
   // 작성 중이던 하자(카메라 촬영 중 앱이 종료된 경우 등) 복원
   try {
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
     if (d && d.params && getProject(d.params.id) && CAT[d.params.cat]) {
-      stack.push({ name: 'project', params: { id: d.params.id } });
+      DB.settings.currentId = d.params.id;
       stack.push({ name: 'list', params: { id: d.params.id, cat: d.params.cat } });
       stack.push({ name: 'item', params: Object.assign({}, d.params, { _restore: d }) });
     }

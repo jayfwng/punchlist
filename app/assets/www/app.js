@@ -394,7 +394,7 @@ function vList(app, { id, cat }) {
       ${list.map(i => {
         const ph = orderedPhotos(i);
         return `<div class="card item" data-iid="${i.id}">
-          <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
+          <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">📷${ph.length}</span>` : '') : '📷'}</div>
           <div class="body"><div class="where"><span class="no">${all.indexOf(i) + 1}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
           <div class="issue">${esc(i.issue) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div></div></div>`;
       }).join('')}
@@ -432,17 +432,21 @@ function numberIn(p, cat, item) {
 function itemCard(p, i, showCat) {
   const ph = orderedPhotos(i), c = CAT[i.cat];
   return `<div class="card item" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
-    <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
+    <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">📷${ph.length}</span>` : '') : '📷'}</div>
     <div class="body"><div class="where">${showCat ? `<button class="cattag" data-chcat="${i.id}">${c.name} ▾</button>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
     <div class="issue">${esc(i.issue) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div></div></div>`;
 }
+let ALL_ST = null;
 function vAll(app) {
   const p = curProject();
   if (!p) {
     app.innerHTML = topbar('점검목록', '', { backBtn: false }) + `<div class="page"><div class="empty"><div class="big">📋</div><p><b>먼저 현장을 등록하세요</b></p></div></div>`;
     return;
   }
-  const st = ctx.st || (ctx.st = { cat: '', floor: '', q: '', status: '' });
+  // 필터는 화면을 오가도 유지 (현장이 바뀌면 초기화)
+  if (!ALL_ST || ALL_ST.pid !== p.id) ALL_ST = { pid: p.id, cat: '', floor: '', q: '', status: '', photo: '', y: 0 };
+  const st = ALL_ST;
+  const PHOTO_F = { none: ['사진 없음', n => n === 0], one: ['📷 1장', n => n === 1], multi: ['📷 2장↑', n => n >= 2], many: ['📷 3장↑', n => n >= 3] };
   const order = [...elevUnits(p), ...floorsOf(p)];
   const byOrder = (a, b) => (order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999);
   const base = p.items.filter(i => !st.cat || i.cat === st.cat);
@@ -450,6 +454,7 @@ function vAll(app) {
   const q = st.q.trim().toLowerCase();
   const list = base.filter(i => (!st.floor || i.floor === st.floor) &&
       (!st.status || (st.status === 'done' ? i.done : !i.done)) &&
+      (!st.photo || PHOTO_F[st.photo][1]((i.photos || []).length)) &&
       (!q || [i.floor, i.location, i.equipment, i.issue, i.company, i.action].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => CATS.findIndex(c => c.key === a.cat) - CATS.findIndex(c => c.key === b.cat) || a.createdAt - b.createdAt);
   app.innerHTML = topbar('점검목록', `${esc(p.name)} · 전체 ${p.items.length}건`, { backBtn: false }) +
@@ -458,8 +463,9 @@ function vAll(app) {
       <div class="chiprow"><button class="chip ${st.cat ? '' : 'on'}" data-c="">전체 ${p.items.length}</button>
         ${CATS.map(c => { const n = p.items.filter(i => i.cat === c.key).length; return `<button class="chip ${st.cat === c.key ? 'on' : ''}" data-c="${c.key}" style="${st.cat === c.key ? `background:${c.color};border-color:${c.color}` : ''}">${c.name} ${n}</button>`; }).join('')}</div>
       <div class="chiprow">
-        <select class="sel" id="fl"><option value="">층 전체</option>${floors.map(f => `<option ${st.floor === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
-        <select class="sel" id="stt"><option value="">상태 전체</option><option value="open" ${st.status === 'open' ? 'selected' : ''}>진행중</option><option value="done" ${st.status === 'done' ? 'selected' : ''}>조치완료</option></select>
+        <select class="sel ${st.floor ? 'on' : ''}" id="fl"><option value="">층 전체</option>${floors.map(f => `<option ${st.floor === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
+        <select class="sel ${st.status ? 'on' : ''}" id="stt"><option value="">상태 전체</option><option value="open" ${st.status === 'open' ? 'selected' : ''}>진행중</option><option value="done" ${st.status === 'done' ? 'selected' : ''}>조치완료</option></select>
+        <select class="sel ${st.photo ? 'on' : ''}" id="pho"><option value="">사진 전체</option>${Object.keys(PHOTO_F).map(k => `<option value="${k}" ${st.photo === k ? 'selected' : ''}>${PHOTO_F[k][0]} (${base.filter(i => PHOTO_F[k][1]((i.photos || []).length)).length})</option>`).join('')}</select>
       </div>
     </div>
     <div class="page" style="padding-top:12px">
@@ -472,8 +478,10 @@ function vAll(app) {
   $$('[data-c]', app).forEach(b => b.onclick = () => { st.cat = b.dataset.c; st.floor = ''; rerender(); });
   $('#fl', app).onchange = e => { st.floor = e.target.value; rerender(); };
   $('#stt', app).onchange = e => { st.status = e.target.value; rerender(); };
+  $('#pho', app).onchange = e => { st.photo = e.target.value; rerender(); };
   let t;
   $('#q', app).oninput = e => { st.q = e.target.value; clearTimeout(t); t = setTimeout(() => { render(); const i = $('#q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  if (st.y && !ctx.restored) { ctx.restored = true; const y = st.y; st.y = 0; setTimeout(() => window.scrollTo(0, y), 0); }
   $$('#lst .item', app).forEach(el => el.onclick = async e => {
     if (e.target.closest('[data-chcat]')) {
       const it = p.items.find(x => x.id === el.dataset.iid);
@@ -485,6 +493,7 @@ function vAll(app) {
       toast(`${oldName} No.${oldNo} → ${CAT[k].name} No.${numberOf(p, it)}`);
       return rerender();
     }
+    st.y = window.scrollY;
     go('item', { id: p.id, cat: el.dataset.cat, iid: el.dataset.iid });
   });
   $('#add', app).onclick = () => {

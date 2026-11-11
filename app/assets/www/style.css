@@ -240,3 +240,7 @@ button.cattag:active { background: #f1f5f9; }
 .opt.sub { padding: 10px 0; border-bottom: 0; }
 .opt.sub input { width: 20px; height: 20px; }
 .opt .est { font-size: 13px; font-weight: 700; color: var(--ink2); white-space: nowrap; }
+
+/* ---------- 점검목록 필터 3개 */
+.chiprow .sel { min-width: 0; padding: 0 4px 0 8px; font-size: 14px; }
+.sel.on { border-color: var(--accent); color: var(--accent-d); background: #fff7ed; }

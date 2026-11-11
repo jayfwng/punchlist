@@ -388,12 +388,28 @@ function vList(app, { id, cat }) {
   $('#add', app).onclick = () => go('floor', { id, cat });
 }
 
+// ======================================================================= 공종 선택/변경 모달
+function pickCategory(title, current, note) {
+  return new Promise(res => {
+    let done = false;
+    openModal(`<h3>${esc(title)}</h3>${note ? `<p>${esc(note)}</p>` : ''}<div class="catgrid">${CATS.map(c => `<button class="card cat" style="--c:${c.color};min-height:72px;box-shadow:none;border:1.5px solid ${c.key === current ? c.color : 'var(--line)'}" data-pick="${c.key}"><div class="cname">${c.name}</div>${c.key === current ? '<div class="cnum">현재 공종</div>' : ''}</button>`).join('')}</div>`,
+      (el, m) => {
+        m.onClose = () => { if (!done) res(null); };
+        $$('[data-pick]', el).forEach(b => b.onclick = () => { done = true; closeTopModal(); res(b.dataset.pick); });
+      });
+  });
+}
+/** 기존 하자의 공종 이동 시 새 번호 (등록 시간 순) */
+function numberIn(p, cat, item) {
+  return p.items.filter(i => i.cat === cat && i !== item && i.createdAt < item.createdAt).length + 1;
+}
+
 // ======================================================================= 점검목록 (현재 현장 전체)
 function itemCard(p, i, showCat) {
   const ph = i.photos || [], c = CAT[i.cat];
   return `<div class="card item" data-iid="${i.id}" data-cat="${i.cat}" style="--c:${c.color}">
     <div class="thumb" style="${ph[0] ? `background-image:url('${thumbUrl(ph[0].id)}')` : ''}">${ph[0] ? (ph.length > 1 ? `<span class="n">+${ph.length - 1}</span>` : '') : '📷'}</div>
-    <div class="body"><div class="where">${showCat ? `<span class="cattag">${c.name}</span>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
+    <div class="body"><div class="where">${showCat ? `<button class="cattag" data-chcat="${i.id}">${c.name} ▾</button>` : ''}<span class="no">${numberOf(p, i)}</span>${esc(i.floor)} · ${esc(i.location)}${i.equipment ? ' · ' + esc(i.equipment) : ''}${i.done ? '<span class="badge">완료</span>' : ''}</div>
     <div class="issue">${esc(i.issue) || '<span style="color:var(--ink3)">(내용 없음)</span>'}</div></div></div>`;
 }
 function vAll(app) {
@@ -434,7 +450,19 @@ function vAll(app) {
   $('#stt', app).onchange = e => { st.status = e.target.value; rerender(); };
   let t;
   $('#q', app).oninput = e => { st.q = e.target.value; clearTimeout(t); t = setTimeout(() => { render(); const i = $('#q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
-  $$('#lst .item', app).forEach(el => el.onclick = () => go('item', { id: p.id, cat: el.dataset.cat, iid: el.dataset.iid }));
+  $$('#lst .item', app).forEach(el => el.onclick = async e => {
+    if (e.target.closest('[data-chcat]')) {
+      const it = p.items.find(x => x.id === el.dataset.iid);
+      const oldNo = numberOf(p, it), oldName = CAT[it.cat].name;
+      const k = await pickCategory('공종 변경', it.cat, `No.${oldNo} ${it.floor} · ${it.location}\n${it.issue}`);
+      if (!k || k === it.cat) return;
+      it.cat = k; it.updatedAt = Date.now(); p.updatedAt = it.updatedAt;
+      saveDB();
+      toast(`${oldName} No.${oldNo} → ${CAT[k].name} No.${numberOf(p, it)}`);
+      return rerender();
+    }
+    go('item', { id: p.id, cat: el.dataset.cat, iid: el.dataset.iid });
+  });
   $('#add', app).onclick = () => {
     if (st.cat) return go('floor', { id: p.id, cat: st.cat });
     openModal(`<h3>공종 선택</h3><div class="catgrid">${CATS.map(c => `<button class="card cat" style="--c:${c.color};min-height:72px;box-shadow:none;border:1.5px solid var(--line)" data-pick="${c.key}"><div class="cname">${c.name}</div></button>`).join('')}</div>`,
@@ -484,8 +512,8 @@ function recentValues(p, key, prefer) {
 }
 
 function vItem(app, params) {
-  const { id, cat, iid } = params;
-  const p = getProject(id), c = CAT[cat];
+  const { id, iid } = params;
+  const p = getProject(id);
   const editing = iid ? p.items.find(i => i.id === iid) : null;
   if (!ctx.f) {
     if (params._restore) {
@@ -498,21 +526,25 @@ function vItem(app, params) {
         floor: src.floor || params.floor || '', location: src.location || params.location || '', equipment: src.equipment || '',
         issue: src.issue || '', photos: JSON.parse(JSON.stringify(src.photos || [])),
         company: src.company || '', action: src.action || '', actionDate: src.actionDate || '', done: !!src.done,
+        cat: src.cat || params.cat,
       };
       ctx.newPhotos = []; ctx.removed = [];
     }
   }
   const f = ctx.f;
-  const no = editing ? numberOf(p, editing) : itemsOf(p, cat).length + 1;
+  if (!CAT[f.cat]) f.cat = editing ? editing.cat : params.cat;
+  const cat = f.cat, c = CAT[cat];
+  const catChanged = editing && editing.cat !== cat;
+  const no = editing ? (catChanged ? numberIn(p, cat, editing) : numberOf(p, editing)) : itemsOf(p, cat).length + 1;
   const locs = recentValues(p, 'location', i => i.floor === f.floor);
   const eqs = recentValues(p, 'equipment', i => i.cat === cat);
   const showMore = editing && (f.company || f.action || f.actionDate || f.done);
 
   app.innerHTML = topbar(`${editing ? '하자 수정' : '하자 등록'} · No.${no}`, esc(p.name),
       { right: editing ? `<button class="iconbtn" id="del" aria-label="삭제">${ICON.trash}</button>` : '' }) +
-    `<div class="ctxbar" style="--c:${c.color}"><span class="tag">${c.name}</span>
+    `<div class="ctxbar" style="--c:${c.color}"><button class="tag" id="chcat">${c.name} <span style="opacity:.75">▾</span></button>
       <button class="floor" id="chfloor">${esc(f.floor) || '층 선택'} <span style="color:var(--ink3)">▾</span></button>
-      <span style="margin-left:auto;font-size:12px;color:var(--ink3)">${editing ? fmtTime(editing.createdAt) : ''}</span></div>
+      <span style="margin-left:auto;font-size:12px;color:var(--ink3);text-align:right">${catChanged ? `<b style="color:var(--accent)">${CAT[editing.cat].name} → ${c.name}</b><br>` : ''}${editing ? fmtTime(editing.createdAt) : ''}</span></div>
     <div class="page">
       <div class="field"><label>장소 <span class="req">필수</span></label>
         <input class="input" id="location" value="${esc(f.location)}" placeholder="예: 계단실1, 남자화장실, 기계실" autocomplete="off">
@@ -578,6 +610,15 @@ function vItem(app, params) {
       });
     });
   };
+  $('#chcat').onclick = async () => {
+    const k = await pickCategory('공종 변경', f.cat, editing ? '저장하면 선택한 공종 목록으로 옮겨지고 번호가 다시 매겨집니다.' : '');
+    if (!k || k === f.cat) return;
+    f.cat = k; ctx.dirty = true;
+    stack[stack.length - 1].params.cat = k;
+    saveDraft();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    toast(`공종: ${CAT[k].name}`);
+  };
   const reqId = 'r' + Date.now();
   ctx.reqId = reqId;
   $('#cam').onclick = () => { saveDraft(); if (N) N.takePhoto(reqId); else mockPhoto(); };
@@ -590,10 +631,10 @@ function vItem(app, params) {
     const now = Date.now();
     const data = {
       floor: f.floor.trim(), location: f.location.trim(), equipment: f.equipment.trim(), issue: f.issue.trim(), photos: f.photos,
-      company: f.company.trim(), action: f.action.trim(), actionDate: f.actionDate.trim(), done: f.done, updatedAt: now,
+      company: f.company.trim(), action: f.action.trim(), actionDate: f.actionDate.trim(), done: f.done, updatedAt: now, cat,
     };
     if (editing) Object.assign(editing, data);
-    else p.items.push(Object.assign({ id: uid(), cat, createdAt: now }, data));
+    else p.items.push(Object.assign({ id: uid(), createdAt: now }, data));
     ctx.removed.forEach(pid => N && N.deletePhoto(pid));
     p.updatedAt = now;
     saveDB();
@@ -603,7 +644,7 @@ function vItem(app, params) {
       toast(`No.${no} 저장됨 · 같은 층/장소로 계속`);
       go('item', { id, cat, floor: data.floor, location: data.location }, true);
     } else {
-      toast(editing ? '수정되었습니다' : `No.${no} 저장되었습니다`);
+      toast(editing ? (catChanged ? `${c.name} No.${no}(으)로 이동되었습니다` : '수정되었습니다') : `${c.name} No.${no} 저장되었습니다`);
       stack.pop(); ctx = {}; render();
     }
   };

@@ -219,3 +219,9 @@ body.tabs .toast { bottom: 150px; }
 .chiprow { display: flex; gap: 6px; overflow-x: auto; width: 100%; scrollbar-width: none; }
 .chiprow::-webkit-scrollbar { display: none; }
 .sel { flex: 1; height: 40px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; padding: 0 10px; font-size: 15px; font-weight: 600; color: var(--ink2); }
+
+/* ---------- 공종 변경 */
+.ctxbar .tag { border: 0; }
+.ctxbar .tag:active { filter: brightness(.9); }
+button.cattag { background: #fff; font-family: inherit; line-height: 1.5; }
+button.cattag:active { background: #f1f5f9; }

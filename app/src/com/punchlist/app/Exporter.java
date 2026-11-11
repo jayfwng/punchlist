@@ -206,6 +206,50 @@ public class Exporter {
         return res;
     }
 
+    // ------------------------------------------------------------------ 전체 백업
+
+    /** data.json + 사진 전체를 ZIP 으로 (저장 또는 공유) */
+    public Result backup(String dataJson, boolean share) throws Exception {
+        Result res = new Result();
+        String stamp = new SimpleDateFormat("yyMMdd_HHmm", Locale.KOREA).format(new Date());
+        String name = "PunchList_백업_" + stamp + ".zip";
+        File[] photos = photoDir.listFiles();
+        if (photos == null) photos = new File[0];
+        OutputStream os;
+        File shareFile = null;
+        if (share) {
+            File d = new File(ctx.getCacheDir(), "share");
+            clearDir(d);
+            d.mkdirs();
+            shareFile = new File(d, name);
+            os = new FileOutputStream(shareFile);
+        } else {
+            os = openOutput(Environment.DIRECTORY_DOWNLOADS, "PunchList", name, "application/zip", null);
+            res.saved.add("백업 → 다운로드(Download)/PunchList/" + name);
+        }
+        ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(os, 1 << 16));
+        try {
+            zip.putNextEntry(new ZipEntry("data.json"));
+            zip.write(dataJson.getBytes("UTF-8"));
+            zip.closeEntry();
+            for (int i = 0; i < photos.length; i++) {
+                File f = photos[i];
+                if (!f.getName().endsWith(".jpg")) continue;
+                listener.progress("사진 " + (i + 1) + "/" + photos.length, (i + 1) * 100 / Math.max(1, photos.length));
+                zip.putNextEntry(new ZipEntry("photos/" + f.getName()));
+                zip.write(readAll(f));
+                zip.closeEntry();
+            }
+        } finally {
+            zip.close();
+            if (!share) closePending(os);
+        }
+        res.saved.add("사진 " + photos.length + "장 포함");
+        if (share) { res.shareFile = shareFile; res.shareMime = "application/zip"; }
+        listener.progress("완료", 100);
+        return res;
+    }
+
     // ------------------------------------------------------------------ 저장소
 
     /** MediaStore(안드10+) 또는 공용 폴더(안드9 이하)에 파일 출력 스트림 생성 */

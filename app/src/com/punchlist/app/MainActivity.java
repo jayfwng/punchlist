@@ -42,7 +42,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final String HOST = "app.local";
     private static final String START_URL = "https://" + HOST + "/index.html";
-    private static final int REQ_CAMERA = 11, REQ_GALLERY = 12, REQ_STORAGE = 13;
+    private static final int REQ_CAMERA = 11, REQ_GALLERY = 12, REQ_STORAGE = 13, REQ_BACKUP = 14;
 
     private WebView web;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -253,6 +253,9 @@ public class MainActivity extends Activity {
             } else if (f != null) {
                 f.delete();
             }
+        } else if (requestCode == REQ_BACKUP) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) importBackup(data.getData());
+            else js("window.onBackupImported && window.onBackupImported(null)");
         } else if (requestCode == REQ_GALLERY) {
             String req = galleryReqId;
             if (resultCode != RESULT_OK || data == null) return;
@@ -308,7 +311,9 @@ public class MainActivity extends Activity {
                             js("window.onExportProgress && window.onExportProgress(" + q(msg) + "," + pct + ")");
                         }
                     });
-                    final Exporter.Result r = ex.run(opt);
+                    final Exporter.Result r = opt.has("backup")
+                            ? ex.backup(opt.getString("backup"), "share".equals(opt.optString("target")))
+                            : ex.run(opt);
                     JSONObject res = new JSONObject();
                     res.put("ok", true);
                     res.put("saved", new JSONArray(r.saved));
@@ -356,6 +361,62 @@ public class MainActivity extends Activity {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && p != null) startExport(p);
             else js("window.onExportDone && window.onExportDone({ok:false,error:'저장 권한이 필요합니다'})");
         }
+    }
+
+    // ------------------------------------------------------------------ 백업 불러오기
+
+    private void importBackup(final Uri uri) {
+        js("window.onPhotoBusy && window.onPhotoBusy(true)");
+        exportExec.execute(new Runnable() {
+            @Override public void run() {
+                String dataJson = null;
+                int n = 0;
+                try {
+                    InputStream in = getContentResolver().openInputStream(uri);
+                    if (in == null) throw new IOException("파일을 열 수 없습니다");
+                    java.util.zip.ZipInputStream zin = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(in));
+                    try {
+                        java.util.zip.ZipEntry e;
+                        while ((e = zin.getNextEntry()) != null) {
+                            String name = e.getName();
+                            if ("data.json".equals(name)) {
+                                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                                copy(zin, bo);
+                                dataJson = bo.toString("UTF-8");
+                            } else if (name.startsWith("photos/") && name.endsWith(".jpg")) {
+                                String fn = name.substring(7);
+                                if (fn.contains("/") || fn.contains("..")) continue;
+                                File out = new File(photoDir, fn);
+                                OutputStream os = new FileOutputStream(out);
+                                try { copy(zin, os); } finally { os.close(); }
+                                try {
+                                    android.graphics.Bitmap t = PhotoUtil.scaleToEdge(PhotoUtil.decodeSampled(out.getAbsolutePath(), PhotoUtil.THUMB_EDGE), PhotoUtil.THUMB_EDGE);
+                                    if (t != null) { PhotoUtil.writeJpeg(t, new File(thumbDir, fn), 75); t.recycle(); }
+                                } catch (Exception ignored) { }
+                                n++;
+                            }
+                        }
+                    } finally {
+                        zin.close();
+                    }
+                    if (dataJson == null) throw new IOException("펀치리스트 백업 파일이 아닙니다 (data.json 없음)");
+                    JSONObject o = new JSONObject();
+                    o.put("ok", true);
+                    o.put("data", dataJson);
+                    o.put("photos", n);
+                    js("window.onBackupImported && window.onBackupImported(" + o.toString() + ")");
+                } catch (Exception e) {
+                    js("window.onBackupImported && window.onBackupImported({ok:false,error:" + q(e.getMessage()) + "})");
+                } finally {
+                    js("window.onPhotoBusy && window.onPhotoBusy(false)");
+                }
+            }
+        });
+    }
+
+    private static void deleteChildren(File d) {
+        File[] fs = d.listFiles();
+        if (fs != null) for (File f : fs) f.delete();
     }
 
     // ------------------------------------------------------------------ 파일 유틸
@@ -520,6 +581,63 @@ public class MainActivity extends Activity {
             File[] fs = photoDir.listFiles();
             if (fs != null) for (File f : fs) { total += f.length(); n++; }
             return "{\"photos\":" + n + ",\"mb\":" + (Math.round(total / 104857.6) / 10.0) + "}";
+        }
+
+        @JavascriptInterface
+        public void exportBackup(String dataJson, String target) {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("backup", dataJson);
+                o.put("target", target);
+                final String j = o.toString();
+                ui.post(new Runnable() {
+                    @Override public void run() { startExport(j); }
+                });
+            } catch (Exception e) {
+                toast("백업 실패: " + e.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public void importBackup() {
+            ui.post(new Runnable() {
+                @Override public void run() {
+                    Intent it = new Intent(Intent.ACTION_GET_CONTENT);
+                    it.setType("*/*");
+                    it.addCategory(Intent.CATEGORY_OPENABLE);
+                    try {
+                        startActivityForResult(Intent.createChooser(it, "백업 ZIP 파일 선택"), REQ_BACKUP);
+                    } catch (ActivityNotFoundException e) {
+                        toast("파일 선택 앱을 찾을 수 없습니다");
+                    }
+                }
+            });
+        }
+
+        /** 목록에 없는 사진 파일 정리 */
+        @JavascriptInterface
+        public void cleanupPhotos(String keepJson) {
+            try {
+                JSONArray a = new JSONArray(keepJson);
+                java.util.HashSet<String> keep = new java.util.HashSet<String>();
+                for (int i = 0; i < a.length(); i++) keep.add(a.getString(i) + ".jpg");
+                for (File dir : new File[]{photoDir, thumbDir}) {
+                    File[] fs = dir.listFiles();
+                    if (fs != null) for (File f : fs) if (!keep.contains(f.getName())) f.delete();
+                }
+            } catch (Exception ignored) { }
+        }
+
+        /** 모든 데이터와 사진 삭제 */
+        @JavascriptInterface
+        public void resetAll() {
+            synchronized (MainActivity.this) {
+                deleteChildren(photoDir);
+                deleteChildren(thumbDir);
+                dataFile.delete();
+                new File(getFilesDir(), "data.json.bak").delete();
+                pendingFile.delete();
+            }
         }
 
         @JavascriptInterface

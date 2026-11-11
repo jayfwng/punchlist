@@ -109,7 +109,7 @@ window.onBack = back;
 function render() {
   const cur = stack[stack.length - 1];
   const app = $('#app');
-  const views = { home: vHome, setup: vSetup, project: vProject, list: vList, floor: vFloor, item: vItem, export: vExport };
+  const views = { home: vHome, setup: vSetup, project: vProject, list: vList, floor: vFloor, item: vItem, export: vExport, settings: vSettings };
   app.innerHTML = '';
   (views[cur.name] || vHome)(app, cur.params);
 }
@@ -120,6 +120,7 @@ const ICON = {
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>',
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
 };
 
@@ -203,7 +204,7 @@ document.addEventListener('click', e => {
 // ======================================================================= 홈
 function vHome(app) {
   const ps = [...DB.projects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  app.innerHTML = topbar('펀치리스트', '건물 하자 점검', { backBtn: false, right: `<button class="iconbtn" id="about">${ICON.info}</button>` }) +
+  app.innerHTML = topbar('펀치리스트', '건물 하자 점검', { backBtn: false, right: `<button class="iconbtn" id="settings" aria-label="설정">${ICON.gear}</button>` }) +
     `<div class="page">
       ${ps.length ? '<div class="section-title">점검 현장</div>' : ''}
       ${ps.map(p => {
@@ -218,13 +219,7 @@ function vHome(app) {
     <div class="bottombar"><button class="btn primary" id="new">＋ 새 현장 등록</button></div>`;
   $$('.proj', app).forEach(el => el.onclick = () => go('project', { id: el.dataset.id }));
   $('#new', app).onclick = () => go('setup', {});
-  $('#about', app).onclick = () => {
-    let info = '';
-    try { const s = JSON.parse(N.storageInfo()); info = `\n\n저장된 사진 ${s.photos}장 · ${s.mb}MB`; } catch (e) { }
-    openModal(`<h3>펀치리스트 ${N && N.version ? 'v' + esc(N.version()) : ''}</h3>
-      <p>건축 · 기계 · 전기 · 소방 · 승강기 · 안전(공통) 하자를 현장에서 기록하고, PUNCH LIST 엑셀(사진 포함)과 사진 파일로 내보냅니다.${esc(info)}\n\n데이터는 이 휴대폰 안에만 저장됩니다. 앱을 삭제하면 기록도 지워지니, 점검이 끝나면 꼭 내보내기를 해 두세요.</p>
-      <div class="acts"><button class="btn dark" onclick="closeTopModal()">닫기</button></div>`);
-  };
+  $('#settings', app).onclick = () => go('settings');
 }
 
 // ======================================================================= 현장 등록/수정
@@ -672,9 +667,99 @@ window.onExportDone = function (r) {
     <div class="acts"><button class="btn dark" onclick="closeTopModal()">확인</button></div>`);
 };
 
+// ======================================================================= 설정
+function vSettings(app) {
+  let info = { photos: 0, mb: 0 };
+  try { if (N) info = JSON.parse(N.storageInfo()); } catch (e) { }
+  const nItems = DB.projects.reduce((s, p) => s + p.items.length, 0);
+  app.innerHTML = topbar('설정', '') +
+    `<div class="page">
+      <div class="section-title">데이터 백업 (현장·하자·사진 전체)</div>
+      <div class="card" style="padding:14px">
+        <p class="note" style="margin:0 0 12px">현장 ${DB.projects.length}곳 · 하자 ${nItems}건 · 사진 ${info.photos}장 (${info.mb}MB)<br>
+        백업 ZIP 파일로 다른 휴대폰에 옮기거나, 앱 삭제·초기화 전에 보관할 수 있습니다.</p>
+        <div class="row" style="margin-bottom:10px"><button class="btn primary" id="bsave">📥 백업 저장</button><button class="btn dark" id="bshare">${ICON.share}<span>백업 공유</span></button></div>
+        <button class="btn ghost block" id="bload">📂 백업 불러오기</button>
+      </div>
+      <div class="section-title">데이터 초기화</div>
+      <div class="card" style="padding:14px">
+        <p class="note" style="margin:0 0 12px">모든 현장, 하자 기록, 사진을 삭제합니다. 되돌릴 수 없으니 먼저 백업하세요.<br>(이미 휴대폰 다운로드·사진 폴더에 내보낸 파일은 지워지지 않습니다)</p>
+        <button class="btn danger block" id="reset">${ICON.trash}<span>데이터 초기화</span></button>
+      </div>
+      <div class="section-title">앱 정보</div>
+      <div class="card" style="padding:14px">
+        <p class="note" style="margin:0;color:var(--ink2)"><b>펀치리스트 ${N && N.version ? 'v' + esc(N.version()) : ''}</b><br>
+        건축 · 기계 · 전기 · 소방 · 승강기 · 안전(공통) 하자를 기록하고 PUNCH LIST 엑셀(사진 포함)과 사진 파일로 내보냅니다.<br>
+        데이터는 이 휴대폰 안에만 저장됩니다.</p>
+      </div>
+    </div>`;
+  const backup = target => {
+    if (!N) { toast('앱에서만 가능합니다'); return; }
+    openModal(`<h3>백업 ${target === 'share' ? '파일 만드는 중' : '저장 중'}</h3><div class="pbar"><i id="pb" style="width:0%"></i></div><div class="pmsg" id="pm">준비 중…</div>`,
+      el => { el.parentElement.dataset.locked = '1'; });
+    N.exportBackup(JSON.stringify(DB), target);
+  };
+  $('#bsave', app).onclick = () => backup('save');
+  $('#bshare', app).onclick = () => backup('share');
+  $('#bload', app).onclick = async () => {
+    if (!N) { toast('앱에서만 가능합니다'); return; }
+    if (DB.projects.length && !await confirmDialog('백업 불러오기', '현재 앱의 모든 데이터가 백업 파일 내용으로 바뀝니다.\n계속할까요?', '파일 선택')) return;
+    N.importBackup();
+  };
+  $('#reset', app).onclick = async () => {
+    if (!await confirmDialog('데이터 초기화', `현장 ${DB.projects.length}곳, 하자 ${nItems}건, 사진 ${info.photos}장이 모두 삭제됩니다.\n되돌릴 수 없습니다.`, '계속', true)) return;
+    const v = await promptDialog('확인을 위해 "초기화"를 입력하세요', '초기화');
+    if (v !== '초기화') { if (v !== null) toast('입력이 일치하지 않아 취소했습니다'); return; }
+    if (N) N.resetAll();
+    DB = { version: 1, projects: [], settings: { photoMode: DB.settings.photoMode || 'with', seededW4: true } };
+    saveDB();
+    clearDraft();
+    stack = [{ name: 'home', params: {} }]; ctx = {}; render();
+    toast('초기화되었습니다');
+  };
+}
+window.onBackupImported = function (r) {
+  if (!r) return;
+  if (!r.ok) {
+    openModal(`<h3>불러오기 실패</h3><p>${esc(r.error || '알 수 없는 오류')}</p><div class="acts"><button class="btn dark" onclick="closeTopModal()">닫기</button></div>`);
+    return;
+  }
+  try {
+    const d = JSON.parse(r.data);
+    if (!d || !Array.isArray(d.projects)) throw new Error('형식 오류');
+    DB = Object.assign({ settings: {} }, d);
+    DB.settings.seededW4 = true;
+    saveDB();
+    const keep = [];
+    DB.projects.forEach(p => p.items.forEach(i => (i.photos || []).forEach(ph => keep.push(ph.id))));
+    if (N) N.cleanupPhotos(JSON.stringify(keep));
+    clearDraft();
+    stack = [{ name: 'home', params: {} }]; ctx = {}; render();
+    const n = DB.projects.reduce((s, p) => s + p.items.length, 0);
+    openModal(`<h3>✅ 불러오기 완료</h3><p>현장 ${DB.projects.length}곳 · 하자 ${n}건 · 사진 ${r.photos}장</p><div class="acts"><button class="btn dark" onclick="closeTopModal()">확인</button></div>`);
+  } catch (e) {
+    openModal(`<h3>불러오기 실패</h3><p>백업 파일을 읽을 수 없습니다.</p><div class="acts"><button class="btn dark" onclick="closeTopModal()">닫기</button></div>`);
+  }
+};
+
+// 기본 현장: 무신사 W4 (지하1층 ~ 지상7층, 옥상) — 최초 1회만 생성
+function seedDefaults() {
+  if (DB.settings.seededW4) return;
+  DB.settings.seededW4 = true;
+  if (!DB.projects.some(p => p.name === '무신사 W4')) {
+    DB.projects.push({
+      id: uid(), name: '무신사 W4', date: today(), inspector: '', items: [],
+      floorCfg: { b: 1, n: 7, r: 0, roof: true, all: true, ext: false, elev: 0, custom: [] },
+      createdAt: Date.now(), updatedAt: Date.now(),
+    });
+  }
+  saveDB();
+}
+
 // ======================================================================= 시작
 function start() {
   loadDB();
+  seedDefaults();
   stack = [{ name: 'home', params: {} }];
   // 작성 중이던 하자(카메라 촬영 중 앱이 종료된 경우 등) 복원
   try {
